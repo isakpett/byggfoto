@@ -157,8 +157,12 @@
 (() => {
   const DEFAULT_COMMENTS = [
     'Kubbing', 'Underlag', 'Gulv', 'Kjøkken', 'Staving', 'Retting',
-    'Isolering', 'Spikerslag', 'Himling', 'Veggplater', 'Gips'
+    'Isolering', 'Spikerslag', 'Himling', 'Veggplater', 'Gips',
+    'Riving', 'Lekter', 'Vindsperre', 'Kledning', 'Dampsperre',
+    'Tildekking', 'Dører og vinduer', 'Opprydding', 'Søppel'
   ];
+  // The first version had only these. Used to add new defaults to saved lists once.
+  const FIRST_DEFAULTS = DEFAULT_COMMENTS.slice(0, 11);
   const MAX_SIDE = 1600;
   const JPEG_QUALITY = 0.72;
 
@@ -197,6 +201,13 @@
   const today = () => new Date().toISOString().slice(0, 10);
   let job = ls.get('job', null) || newJob();
   let comments = ls.get('comments', DEFAULT_COMMENTS.slice());
+  {
+    // Add defaults the user has not seen before. Keep the user's own edits.
+    const known = ls.get('knownDefaults', FIRST_DEFAULTS);
+    DEFAULT_COMMENTS.forEach(c => { if (!known.includes(c) && !comments.includes(c)) comments.push(c); });
+    ls.set('comments', comments);
+    ls.set('knownDefaults', DEFAULT_COMMENTS);
+  }
   let office = ls.get('office', '');
   const blobs = new Map();   // id -> Blob
   const urls = new Map();    // id -> object URL
