@@ -124,6 +124,28 @@
   .editor .stage { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; padding-bottom: env(safe-area-inset-bottom); }
   .editor canvas { max-width: 100%; max-height: 100%; touch-action: none; }
   .editor .hint { color: #aaa; text-align: center; font-size: 14px; padding: 6px 0 calc(10px + env(safe-area-inset-bottom)); }
+  .head-btns { display: flex; align-items: center; gap: 2px; }
+  .icon-btn { color: var(--accent); width: 40px; height: 40px; display: grid; place-items: center; }
+  .icon-btn:disabled { color: var(--muted); opacity: .35; }
+  /* In-app camera */
+  .cam { position: fixed; inset: 0; background: #000; z-index: 55; display: flex; flex-direction: column; color: #fff; }
+  .cam video { flex: 1; min-height: 0; width: 100%; object-fit: cover; background: #000; }
+  .cam .ctop { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center; padding: calc(10px + env(safe-area-inset-top)) 14px 10px; }
+  .cam .pill { background: rgba(0,0,0,.45); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); color: #fff; border-radius: 18px; padding: 8px 14px; font-size: 15px; font-weight: 600; }
+  .cam .cbottom { display: flex; align-items: center; justify-content: space-between; padding: 18px 26px calc(22px + env(safe-area-inset-bottom)); background: #000; }
+  .cam .shutter { width: 74px; height: 74px; border-radius: 50%; border: 4px solid #fff; display: grid; place-items: center; }
+  .cam .shutter::after { content: ""; width: 58px; height: 58px; border-radius: 50%; background: #fff; transition: transform .1s; }
+  .cam .shutter:active::after { transform: scale(.88); }
+  .cam .lastthumb { width: 52px; height: 52px; border-radius: 8px; object-fit: cover; background: #222; border: 2px solid #fff; }
+  .cam .lastthumb.none { visibility: hidden; }
+  .cam .done { color: #ffd60a; font-weight: 600; font-size: 17px; width: 52px; text-align: right; }
+  .cam .flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .25s; }
+  .cam .flash.on { opacity: .8; transition: none; }
+  .cam .err { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 30px; text-align: center; }
+  .cam .err button { background: #fff; color: #000; border-radius: 14px; padding: 14px 20px; font-weight: 600; }
+  /* History */
+  .hist-text { white-space: pre-wrap; font-size: 15px; line-height: 1.45; padding: 14px 16px; }
+  .back-btn { color: var(--accent); padding: 10px 16px 10px 0; font-size: 17px; }
   .empty { padding: 34px 20px; text-align: center; color: var(--muted); }
   .empty svg { color: var(--muted); opacity: .6; margin-bottom: 8px; }
   .busy { text-align: center; color: var(--muted); padding: 10px 0 16px; font-size: 15px; }
@@ -325,6 +347,19 @@
       <div class="group" style="margin-top:26px">
         <button class="cell danger" id="btnResetComments">Tilbakestill standardliste</button>
       </div>
+
+      <div class="section-title">Historikk</div>
+      <div class="group" id="historyList"></div>
+      <div class="section-foot">Sendte jobber, uten bilder. De siste 100 lagres på telefonen.</div>
+    </div>
+  </div>
+  <div class="scroll hidden" id="histDetail">
+    <div class="wrap">
+      <button class="back-btn" id="histBack">‹ Innstillinger</button>
+      <div class="group"><div class="hist-text" id="histText"></div></div>
+      <div class="group" style="margin-top:14px">
+        <button class="cell action center" id="histCopy"><b>Kopier tekst</b></button>
+      </div>
     </div>
   </div>
 </div>
@@ -333,6 +368,24 @@
 <div class="dim hidden" id="dlgDim"></div>
 <div id="dlg"></div>
 <div class="hud" id="hud"></div>
+<div class="cam hidden" id="cam" role="dialog" aria-label="Kamera">
+  <video id="camVideo" playsinline autoplay muted></video>
+  <div class="flash" id="camFlash"></div>
+  <div class="ctop">
+    <span class="pill" id="camCount">0 bilder</span>
+    <button class="pill" id="camNative">iPhone-kamera</button>
+  </div>
+  <div class="err hidden" id="camErr">
+    <div>Fikk ikke tilgang til kameraet.<br>Sjekk at Safari har lov å bruke kameraet.</div>
+    <button id="camErrNative">Bruk iPhone-kamera</button>
+    <button id="camErrClose" style="background:none;color:#fff">Lukk</button>
+  </div>
+  <div class="cbottom">
+    <img class="lastthumb none" id="camThumb" alt="">
+    <button class="shutter" id="camShutter" aria-label="Ta bilde"></button>
+    <button class="done" id="camDone">Ferdig</button>
+  </div>
+</div>
 <div class="editor hidden" id="editor" role="dialog" aria-label="Tegn på bildet">
   <div class="ebar">
     <button id="edCancel">Avbryt</button>
@@ -422,6 +475,7 @@
   const moreOpen = new Set(); // photo ids where "Mer" was pressed
   const cache = new Map();    // id -> { key, blob } final photo for the email (with stamp)
   let editingJob = false;
+  let history = ls.get('history', []);      // sent jobs, newest first, no photos
 
   function newJob() { return { address: '', project: '', date: today(), hours: '', photos: [] }; }
   // Any change makes the job "not sent" again.
@@ -514,27 +568,32 @@
     return new Promise(res => c.toBlob(res, 'image/jpeg', JPEG_QUALITY));
   }
 
-  async function addFiles(files) {
-    if (!files.length) return;
-    $('busy').classList.remove('hidden');
-    try {
-      for (const f of files) {
-        const blob = await compress(f);
-        const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-        await putBlob(id, blob);
-        blobs.set(id, blob);
-        job.photos.push({ id, tags: [], text: '', material: '', hours: '' });
-        saveJob();
-      }
-    } catch (e) {
-      hud('Feil: ' + e.message);
-    }
-    $('busy').classList.add('hidden');
+  async function addBlob(blob) {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    await putBlob(id, blob);
+    blobs.set(id, blob);
+    job.photos.push({ id, tags: [], text: '', material: '', hours: '' });
+    saveJob();
+    return id;
+  }
+  function afterAdd() {
     sortComments();
     editingJob = false; renderJobView();
     renderPhotos();
     const last = $('photos').lastElementChild;
     if (last) last.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }
+
+  async function addFiles(files) {
+    if (!files.length) return;
+    $('busy').classList.remove('hidden');
+    try {
+      for (const f of files) await addBlob(await compress(f));
+    } catch (e) {
+      hud('Feil: ' + e.message);
+    }
+    $('busy').classList.add('hidden');
+    afterAdd();
   }
 
   // ---------- Rendering ----------
@@ -577,7 +636,20 @@
         moreOpen.delete(p.id);
         renderPhotos();
       };
-      head.appendChild(del);
+      const btns = el('div', 'head-btns');
+      const up = el('button', 'icon-btn', '↑'); up.setAttribute('aria-label', 'Flytt opp');
+      const down = el('button', 'icon-btn', '↓'); down.setAttribute('aria-label', 'Flytt ned');
+      up.disabled = i === 0; down.disabled = i === n - 1;
+      const move = d => {
+        const j = i + d;
+        [job.photos[i], job.photos[j]] = [job.photos[j], job.photos[i]];
+        saveJob(); renderPhotos();
+        const c = $('photos').children[j]; if (c) c.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      };
+      up.onclick = () => move(-1); down.onclick = () => move(1);
+      up.style.fontSize = down.style.fontSize = '22px';
+      btns.append(up, down, del);
+      head.appendChild(btns);
       body.appendChild(head);
 
       const chips = el('div', 'chips');
@@ -896,6 +968,9 @@
         await navigator.share(data);
         job.sent = true; ls.set('job', job);
         addRecent();
+        history = [{ at: new Date().toISOString(), address: job.address.trim(), project: job.project.trim(),
+          date: job.date, hours: job.hours, count: job.photos.length, text: bodyText() }].concat(history).slice(0, 100);
+        ls.set('history', history);
         const v = await ask({ style: 'alert', title: 'Ble e-posten sendt?',
           message: 'Hvis ja, tømmes jobben så du kan starte en ny.',
           actions: [{ label: 'Ja, start ny jobb', value: 'new', bold: true }, { label: 'Nei, behold jobben', value: null }] });
@@ -1022,7 +1097,8 @@
   function showSettings(on) {
     const sh = $('settings'), dim = $('sheetDim');
     if (on) {
-      renderCommentList();
+      renderCommentList(); renderHistory();
+      $('histDetail').classList.add('hidden'); $('settings').querySelector('.scroll').classList.remove('hidden');
       sh.classList.remove('hidden'); dim.classList.remove('hidden');
       document.body.classList.add('locked');
       requestAnimationFrame(() => requestAnimationFrame(() => { sh.classList.add('show'); dim.classList.add('show'); }));
@@ -1035,6 +1111,87 @@
     }
   }
 
+  // ---------- History ----------
+  function renderHistory() {
+    const box = $('historyList');
+    box.innerHTML = '';
+    if (!history.length) { box.appendChild(el('div', 'cell static sub', 'Ingen sendte jobber ennå')); return; }
+    history.forEach(h => {
+      const b = el('button', 'cell');
+      const two = el('span', 'two');
+      two.appendChild(el('b', '', h.address || '(uten adresse)'));
+      const meta = [];
+      if (h.project) meta.push(`Prosjekt ${h.project}`);
+      meta.push(fmtDate(h.date));
+      meta.push(`${h.count} ${h.count === 1 ? 'bilde' : 'bilder'}`);
+      if (num(h.hours) != null) meta.push(`${fmtNum(num(h.hours))} t`);
+      two.appendChild(el('span', 'sub', meta.join(' · ')));
+      b.appendChild(two);
+      b.insertAdjacentHTML('beforeend', ICON_CHEV);
+      b.onclick = () => {
+        $('histText').textContent = h.text;
+        $('settings').querySelector('.scroll').classList.add('hidden');
+        $('histDetail').classList.remove('hidden');
+        $('histDetail').scrollTop = 0;
+      };
+      box.appendChild(b);
+    });
+  }
+  $('histBack').onclick = () => {
+    $('histDetail').classList.add('hidden');
+    $('settings').querySelector('.scroll').classList.remove('hidden');
+  };
+  $('histCopy').onclick = () => copyText($('histText').textContent);
+
+  // ---------- In-app camera ----------
+  let camStream = null, camAdded = 0;
+  async function openCam() {
+    camAdded = 0;
+    $('camCount').textContent = '0 bilder';
+    $('camThumb').classList.add('none');
+    $('camErr').classList.add('hidden');
+    $('cam').classList.remove('hidden');
+    document.body.classList.add('locked');
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('no camera api');
+      camStream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } }
+      });
+      const v = $('camVideo');
+      v.srcObject = camStream;
+      await v.play().catch(() => {});
+    } catch (e) {
+      $('camErr').classList.remove('hidden');
+    }
+  }
+  function closeCam() {
+    if (camStream) { camStream.getTracks().forEach(t => t.stop()); camStream = null; }
+    $('camVideo').srcObject = null;
+    $('cam').classList.add('hidden');
+    document.body.classList.remove('locked');
+    if (camAdded) afterAdd();
+  }
+  async function snap() {
+    const v = $('camVideo');
+    if (!camStream || !v.videoWidth) return;
+    const f = $('camFlash'); f.classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => f.classList.remove('on')));
+    const scale = Math.min(1, MAX_SIDE / Math.max(v.videoWidth, v.videoHeight));
+    const w = Math.round(v.videoWidth * scale), h = Math.round(v.videoHeight * scale);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    c.getContext('2d').drawImage(v, 0, 0, w, h);
+    const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', JPEG_QUALITY));
+    await addBlob(blob);
+    camAdded++;
+    $('camCount').textContent = `${camAdded} ${camAdded === 1 ? 'bilde' : 'bilder'}`;
+    const t = $('camThumb'); t.src = urlFor(job.photos[job.photos.length - 1].id); t.classList.remove('none');
+  }
+  $('camShutter').onclick = snap;
+  $('camDone').onclick = closeCam;
+  $('camErrClose').onclick = closeCam;
+  // Backup: the normal iPhone camera. Must open in the same tap.
+  $('camNative').onclick = $('camErrNative').onclick = () => { $('inCamera').click(); closeCam(); };
+
   // ---------- Wire up ----------
   ['address', 'project', 'date', 'hours'].forEach(k => {
     const input = $('f' + k[0].toUpperCase() + k.slice(1));
@@ -1044,7 +1201,7 @@
       $('jobDoneBox').classList.toggle('hidden', !(job.address.trim() && job.project.trim()));
     });
   });
-  $('btnCamera').onclick = () => $('inCamera').click();
+  $('btnCamera').onclick = openCam;
   $('btnLibrary').onclick = () => $('inLibrary').click();
   $('inCamera').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
   $('inLibrary').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
@@ -1086,6 +1243,7 @@
   };
 
   // ---------- Start ----------
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
   (async () => {
     renderJobFields(); renderOffice();
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
