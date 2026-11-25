@@ -80,6 +80,32 @@
   .recent { display: flex; flex-direction: column; gap: 6px; }
   .recent button { text-align: left; font-weight: 500; min-height: 44px; padding: 10px 12px; }
   .recent small { color: var(--muted); font-weight: 400; }
+  .icon-btn { background: none; color: var(--text); padding: 8px; min-height: 44px; min-width: 44px; display: grid; place-items: center; }
+  .chip.on::before { content: "✓ "; }
+  .chip.on { box-shadow: 0 0 0 2px var(--chip-on); }
+  .job-summary {
+    width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    text-align: left; font-weight: 400; color: var(--text); background: var(--card);
+  }
+  .job-summary b { font-size: 18px; }
+  .job-summary small { color: var(--muted); font-size: 15px; }
+  .job-summary .edit { color: var(--accent); font-weight: 600; flex: 0 0 auto; }
+  .bar button.cam { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 13px 18px; background: var(--chip); }
+  .pcard { padding: 10px; }
+  .pcard .compact { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; background: none; padding: 0; min-height: 0; font-weight: 400; color: var(--text); }
+  .pcard .thumb { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; flex: 0 0 auto; background: var(--chip); }
+  .pcard .info { min-width: 0; flex: 1; }
+  .pcard .info b { display: block; }
+  .pcard .tags { color: var(--accent); font-weight: 600; }
+  .pcard .none { color: var(--muted); }
+  .pcard .extra { color: var(--muted); font-size: 14px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pcard .chev { color: var(--muted); font-size: 22px; flex: 0 0 auto; }
+  .pcard.open .big { width: 100%; border-radius: 10px; display: block; margin-bottom: 4px; cursor: zoom-in; }
+  .pcard .actions { display: flex; gap: 10px; margin-top: 12px; }
+  .pcard .actions button { flex: 1; }
+  .viewer { position: fixed; inset: 0; background: #000; z-index: 50; display: flex; align-items: center; justify-content: center; }
+  .viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .viewer button { position: absolute; top: calc(12px + env(safe-area-inset-top)); right: 12px; background: rgba(255,255,255,.2); color: #fff; }
   .hidden { display: none !important; }
   .toast {
     position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom)); transform: translateX(-50%);
@@ -93,12 +119,18 @@
 <body>
 <header>
   <h1>Byggfoto</h1>
-  <button class="link" id="btnSettings">Innstillinger</button>
+  <button class="icon-btn" id="btnSettings" aria-label="Innstillinger" title="Innstillinger">
+    <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
 </header>
 
 <main id="viewJob">
   <h2>Jobb</h2>
-  <div class="card">
+  <button class="card job-summary hidden" id="jobSummary">
+    <span><b id="sumAddress"></b><br><small id="sumMeta"></small></span>
+    <span class="edit">Endre</span>
+  </button>
+  <div class="card" id="jobEdit">
     <label for="fAddress">Adresse</label>
     <input id="fAddress" autocomplete="street-address" placeholder="Storgata 1, Oslo">
     <div id="recentBox" class="hidden">
@@ -117,18 +149,16 @@
     </div>
     <label for="fHours">Timer totalt (valgfritt)</label>
     <input id="fHours" inputmode="decimal" placeholder="7,5">
+    <button class="primary hidden" id="btnJobDone" style="width:100%;margin-top:12px">Ferdig</button>
   </div>
 
   <h2>Bilder <span id="photoCount"></span></h2>
-  <div class="row" style="margin-bottom:12px">
-    <button class="primary" id="btnCamera">Ta bilde</button>
-    <button id="btnLibrary">Fra bilder</button>
-  </div>
+  <button id="btnLibrary" style="width:100%;margin-bottom:12px">Legg til fra Bilder-appen</button>
   <input type="file" id="inCamera" accept="image/*" capture="environment" class="hidden">
   <input type="file" id="inLibrary" accept="image/*" multiple class="hidden">
   <div id="busy" class="busy hidden">Behandler bilder …</div>
   <div id="photos"></div>
-  <div id="empty" class="card empty">Ingen bilder ennå.<br>Trykk «Ta bilde» for å starte.</div>
+  <div id="empty" class="card empty">Ingen bilder ennå.<br>Trykk «Ta bilde» nederst for å starte.</div>
 
   <div class="card">
     <div class="office">
@@ -164,10 +194,18 @@
 
 <div class="bar" id="bar">
   <div class="bar-inner">
+    <button id="btnCamera" class="cam">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      Ta bilde
+    </button>
     <button class="primary" id="btnSend">Send til kontoret</button>
   </div>
 </div>
 <div class="toast" id="toast"></div>
+<div class="viewer hidden" id="viewer" role="dialog" aria-label="Bilde i fullskjerm">
+  <img id="viewerImg" alt="">
+  <button id="viewerClose" aria-label="Lukk">Lukk</button>
+</div>
 
 <script>
 (() => {
@@ -270,6 +308,7 @@
         await putBlob(id, blob);
         blobs.set(id, blob);
         job.photos.push({ id, tags: [], text: '', material: '', hours: '' });
+        openId = id;
         saveJob();
       }
     } catch (e) {
@@ -277,8 +316,10 @@
     }
     $('busy').classList.add('hidden');
     sortComments();
+    editingJob = false; renderJobView();
     renderPhotos();
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    const last = $('photos').lastElementChild;
+    if (last) last.scrollIntoView({ block: 'start', behavior: 'smooth' });
   }
 
   // ---------- Rendering ----------
@@ -287,15 +328,23 @@
     return urls.get(id) || '';
   }
 
+  let openId = null;       // photo card that is open
+  let editingJob = false;
+
   function renderPhotos() {
     const wrap = $('photos');
     wrap.innerHTML = '';
-    $('empty').classList.toggle('hidden', job.photos.length > 0);
-    $('photoCount').textContent = job.photos.length ? `(${job.photos.length})` : '';
+    const n = job.photos.length;
+    $('empty').classList.toggle('hidden', n > 0);
+    $('photoCount').textContent = n ? `(${n})` : '';
+    $('btnSend').textContent = n ? `Send ${n} ${n === 1 ? 'bilde' : 'bilder'}` : 'Send til kontoret';
 
     job.photos.forEach((p, i) => {
       const card = document.createElement('div');
-      card.className = 'card photo';
+      const open = p.id === openId;
+      card.className = 'card pcard' + (open ? ' open' : '');
+      wrap.appendChild(card);
+      if (!open) { renderCompact(card, p, i); return; }
 
       const head = document.createElement('div');
       head.className = 'photo-head';
@@ -307,13 +356,15 @@
         job.photos.splice(i, 1); saveJob();
         await delBlob(p.id); blobs.delete(p.id);
         if (urls.has(p.id)) { URL.revokeObjectURL(urls.get(p.id)); urls.delete(p.id); }
+        openId = null;
         renderPhotos();
       };
       head.appendChild(del);
       card.appendChild(head);
 
       const img = document.createElement('img');
-      img.src = urlFor(p.id); img.alt = `Bilde ${i + 1}`; img.loading = 'lazy';
+      img.className = 'big'; img.src = urlFor(p.id); img.alt = `Bilde ${i + 1}, trykk for fullskjerm`;
+      img.onclick = () => openViewer(p.id);
       card.appendChild(img);
 
       const chips = document.createElement('div');
@@ -334,6 +385,10 @@
       });
       card.appendChild(chips);
 
+      const more = document.createElement('div');
+      const hasMore = p.text.trim() || (p.material || '').trim() || String(p.hours).trim();
+      more.className = hasMore ? '' : 'hidden';
+
       const lt = document.createElement('label'); lt.textContent = 'Egen tekst (valgfritt)';
       const ta = document.createElement('textarea');
       ta.placeholder = 'F.eks. stue, ca. 12 m²';
@@ -347,10 +402,65 @@
       const ih = document.createElement('input');
       ih.inputMode = 'decimal'; ih.placeholder = '2'; ih.value = p.hours;
       ih.oninput = () => { p.hours = ih.value; saveJob(); };
-      card.append(lt, ta, lm, im, lh, ih);
+      more.append(lt, ta, lm, im, lh, ih);
+      card.appendChild(more);
 
-      wrap.appendChild(card);
+      const actions = document.createElement('div');
+      actions.className = 'actions';
+      if (!hasMore) {
+        const bm = document.createElement('button');
+        bm.textContent = 'Mer (tekst, materiell, timer)';
+        bm.onclick = () => { more.classList.remove('hidden'); bm.remove(); ta.focus(); };
+        actions.appendChild(bm);
+      }
+      const done = document.createElement('button');
+      done.className = 'primary'; done.textContent = 'Ferdig';
+      done.onclick = () => { openId = null; renderPhotos(); card.scrollIntoView({ block: 'nearest' }); };
+      actions.appendChild(done);
+      card.appendChild(actions);
     });
+  }
+
+  function renderCompact(card, p, i) {
+    const b = document.createElement('button');
+    b.className = 'compact';
+    const img = document.createElement('img');
+    img.className = 'thumb'; img.src = urlFor(p.id); img.alt = '';
+    const info = document.createElement('span');
+    info.className = 'info';
+    const t = document.createElement('b'); t.textContent = `Bilde ${i + 1}`;
+    const tags = document.createElement('span');
+    if (p.tags.length) { tags.className = 'tags'; tags.textContent = p.tags.join(', '); }
+    else { tags.className = 'none'; tags.textContent = 'Trykk for å velge arbeid'; }
+    info.append(t, tags);
+    const extra = [];
+    if (p.text.trim()) extra.push(p.text.trim());
+    if ((p.material || '').trim()) extra.push(p.material.trim());
+    if (num(p.hours) != null) extra.push(`${fmtNum(num(p.hours))} t`);
+    if (extra.length) { const e = document.createElement('small'); e.className = 'extra'; e.textContent = extra.join(' · '); info.appendChild(e); }
+    const chev = document.createElement('span'); chev.className = 'chev'; chev.textContent = '›';
+    b.append(img, info, chev);
+    b.onclick = () => { openId = p.id; renderPhotos(); card.scrollIntoView({ block: 'start', behavior: 'smooth' }); };
+    card.appendChild(b);
+  }
+
+  function openViewer(id) {
+    $('viewerImg').src = urlFor(id);
+    $('viewer').classList.remove('hidden');
+  }
+
+  function renderJobView() {
+    const filled = job.address.trim() && job.project.trim();
+    const collapsed = filled && !editingJob;
+    $('jobSummary').classList.toggle('hidden', !collapsed);
+    $('jobEdit').classList.toggle('hidden', !!collapsed);
+    $('btnJobDone').classList.toggle('hidden', !filled);
+    if (collapsed) {
+      $('sumAddress').textContent = job.address.trim();
+      const meta = [`Prosjekt ${job.project.trim()}`, fmtDate(job.date)];
+      if (num(job.hours) != null) meta.push(`${fmtNum(num(job.hours))} t`);
+      $('sumMeta').textContent = meta.join(' · ');
+    }
   }
 
   function renderJobFields() {
@@ -360,6 +470,7 @@
     $('fHours').value = job.hours;
     renderSubject();
     renderRecent();
+    renderJobView();
   }
 
   function renderRecent() {
@@ -374,6 +485,7 @@
       if (r.project) { const sm = document.createElement('small'); sm.textContent = `  ·  prosjekt ${r.project}`; b.appendChild(sm); }
       b.onclick = () => {
         job.address = r.address; job.project = r.project; saveJob();
+        editingJob = false;
         renderJobFields();
       };
       box.appendChild(b);
@@ -485,6 +597,7 @@
     blobs.clear();
     urls.forEach(u => URL.revokeObjectURL(u)); urls.clear();
     job = newJob(); saveJob();
+    openId = null; editingJob = false;
     renderJobFields(); renderPhotos();
     window.scrollTo({ top: 0 });
   }
@@ -514,13 +627,20 @@
   // ---------- Wire up ----------
   ['address', 'project', 'date', 'hours'].forEach(k => {
     const el = $('f' + k[0].toUpperCase() + k.slice(1));
-    el.addEventListener('input', () => { job[k] = el.value; saveJob(); renderSubject(); if (k === 'address') renderRecent(); });
+    el.addEventListener('input', () => {
+      job[k] = el.value; saveJob(); renderSubject();
+      if (k === 'address') renderRecent();
+      $('btnJobDone').classList.toggle('hidden', !(job.address.trim() && job.project.trim()));
+    });
   });
   $('btnCamera').onclick = () => $('inCamera').click();
   $('btnLibrary').onclick = () => $('inLibrary').click();
   $('inCamera').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
   $('inLibrary').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
   $('btnSend').onclick = send;
+  $('jobSummary').onclick = () => { editingJob = true; renderJobView(); $('fAddress').focus(); };
+  $('btnJobDone').onclick = () => { editingJob = false; document.activeElement.blur(); renderJobView(); };
+  $('viewer').onclick = () => { $('viewer').classList.add('hidden'); $('viewerImg').src = ''; };
   $('btnCopyEmail').onclick = () => copyText(office, 'E-post kopiert');
   $('btnCopySubject').onclick = () => copyText(subject(), 'Emne kopiert – lim inn i Emne-feltet');
   $('btnNewJob').onclick = () => {
