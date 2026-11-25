@@ -409,8 +409,8 @@
     if (!job.photos.length) { toast('Ta minst ett bilde først.'); return; }
     const files = job.photos.map((p, i) =>
       new File([blobs.get(p.id)], fileName(i), { type: 'image/jpeg' }));
-    // The url is there so iPhone Mail may use the title as the subject line.
-    const data = { files, title: subject(), text: bodyText(), url: location.href.split('#')[0] };
+    // iPhone Mail ignores the title as subject when files are shared; use the "Kopier emne" button.
+    const data = { files, title: subject(), text: bodyText() };
 
     if (navigator.canShare && navigator.canShare({ files })) {
       try {
