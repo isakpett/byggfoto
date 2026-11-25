@@ -72,8 +72,11 @@
   .bar-inner { max-width: 640px; margin: 0 auto; display: flex; gap: 10px; }
   .bar button { flex: 1; }
   .note { font-size: 14px; color: var(--muted); margin: 6px 0 0; }
+  .office + .office { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
   .office { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .office span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .office span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .office button { flex: 0 0 auto; white-space: nowrap; }
+  .office.subject span { white-space: normal; }
   .hidden { display: none !important; }
   .toast {
     position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom)); transform: translateX(-50%);
@@ -120,9 +123,15 @@
   <div id="photos"></div>
   <div id="empty" class="card empty">Ingen bilder ennå.<br>Trykk «Ta bilde» for å starte.</div>
 
-  <div class="card office" id="officeBox">
-    <span>Til: <b id="officeEmail">–</b></span>
-    <button class="link" id="btnCopyEmail">Kopier</button>
+  <div class="card">
+    <div class="office">
+      <span>Til: <b id="officeEmail">–</b></span>
+      <button class="link" id="btnCopyEmail">Kopier</button>
+    </div>
+    <div class="office subject">
+      <span>Emne:<br><b id="subjectPreview">–</b></span>
+      <button class="link" id="btnCopySubject">Kopier</button>
+    </div>
   </div>
   <button class="danger" id="btnNewJob" style="width:100%">Ny jobb (tøm alt)</button>
 </main>
@@ -327,6 +336,7 @@
     $('fProject').value = job.project;
     $('fDate').value = job.date || today();
     $('fHours').value = job.hours;
+    renderSubject();
   }
 
   function renderOffice() {
@@ -399,7 +409,8 @@
     if (!job.photos.length) { toast('Ta minst ett bilde først.'); return; }
     const files = job.photos.map((p, i) =>
       new File([blobs.get(p.id)], fileName(i), { type: 'image/jpeg' }));
-    const data = { files, title: subject(), text: bodyText() };
+    // The url is there so iPhone Mail may use the title as the subject line.
+    const data = { files, title: subject(), text: bodyText(), url: location.href.split('#')[0] };
 
     if (navigator.canShare && navigator.canShare({ files })) {
       try {
@@ -433,10 +444,11 @@
     clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
   }
 
-  async function copyOffice() {
-    try { await navigator.clipboard.writeText(office); toast('E-post kopiert'); }
-    catch { prompt('Kopier adressen:', office); }
+  async function copyText(text, msg) {
+    try { await navigator.clipboard.writeText(text); toast(msg); }
+    catch { prompt('Kopier:', text); }
   }
+  const renderSubject = () => { $('subjectPreview').textContent = subject(); };
 
   function showSettings(on) {
     $('viewJob').classList.toggle('hidden', on);
@@ -450,14 +462,15 @@
   // ---------- Wire up ----------
   ['address', 'project', 'date', 'hours'].forEach(k => {
     const el = $('f' + k[0].toUpperCase() + k.slice(1));
-    el.addEventListener('input', () => { job[k] = el.value; saveJob(); });
+    el.addEventListener('input', () => { job[k] = el.value; saveJob(); renderSubject(); });
   });
   $('btnCamera').onclick = () => $('inCamera').click();
   $('btnLibrary').onclick = () => $('inLibrary').click();
   $('inCamera').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
   $('inLibrary').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
   $('btnSend').onclick = send;
-  $('btnCopyEmail').onclick = copyOffice;
+  $('btnCopyEmail').onclick = () => copyText(office, 'E-post kopiert');
+  $('btnCopySubject').onclick = () => copyText(subject(), 'Emne kopiert – lim inn i Emne-feltet');
   $('btnNewJob').onclick = () => { if (confirm('Tømme jobben og slette alle bilder i appen?\n(Bildene i Bilder-appen blir ikke slettet.)')) resetJob(); };
   $('btnSettings').onclick = () => showSettings(true);
   $('btnBack').onclick = () => showSettings(false);
