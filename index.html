@@ -124,6 +124,10 @@
   .editor .stage { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; padding-bottom: env(safe-area-inset-bottom); }
   .editor canvas { max-width: 100%; max-height: 100%; touch-action: none; }
   .editor .hint { color: #aaa; text-align: center; font-size: 14px; padding: 6px 0 calc(10px + env(safe-area-inset-bottom)); }
+  .sent-badge { display: inline-block; margin: 4px 0 0 6px; background: rgba(52,199,89,.16); color: #248a3d; font-size: 13px; font-weight: 600; padding: 3px 9px; border-radius: 10px; }
+  @media (prefers-color-scheme: dark) { .sent-badge { color: #30d158; } }
+  .stamp-line { font-size: 13px; color: var(--muted); padding: 8px 16px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip.show-all { background: none; color: var(--accent); padding: 0 8px; }
   .head-btns { display: flex; align-items: center; gap: 2px; }
   .icon-btn { color: var(--accent); width: 40px; height: 40px; display: grid; place-items: center; }
   .icon-btn:disabled { color: var(--muted); opacity: .35; }
@@ -252,7 +256,7 @@
   <div class="section-title">Jobb</div>
   <div class="group hidden" id="jobSummary">
     <button class="summary" id="btnEditJob">
-      <span class="two"><b id="sumAddress"></b><small id="sumMeta"></small></span>
+      <span class="two"><b id="sumAddress"></b><small id="sumMeta"></small><span class="sent-badge hidden" id="sumSent">Sendt ✓</span></span>
       <span class="edit">Endre</span>
     </button>
   </div>
@@ -292,19 +296,6 @@
   <input type="file" id="inLibrary" accept="image/*" multiple class="hidden">
 
   <!-- Sending -->
-  <div class="section-title">E-post</div>
-  <div class="group">
-    <div class="cell static">
-      <span class="two"><span class="sub">Til</span><b id="officeEmail">–</b></span>
-      <button class="text-btn" id="btnCopyEmail">Kopier</button>
-    </div>
-    <div class="cell static">
-      <span class="two"><span class="sub">Emne</span><b id="subjectPreview">–</b></span>
-      <button class="text-btn" id="btnCopySubject">Kopier</button>
-    </div>
-  </div>
-  <div class="section-foot">Bruk Outlook-appen, så fylles emnet inn av seg selv.</div>
-
   <div class="group" style="margin-top:26px">
     <button class="cell danger" id="btnNewJob">Ny jobb</button>
   </div>
@@ -331,8 +322,18 @@
       <div class="section-title">Kontor</div>
       <div class="group">
         <label class="cell static"><span class="lbl">E-post</span><input id="fOffice" type="email" autocomplete="email" placeholder="eirik@firma.no"></label>
+        <button class="cell action" id="btnCopyEmail">Kopier e-postadressen</button>
       </div>
-      <div class="section-foot">Vises når du sender. Trykk «Kopier» og lim inn i «Til»-feltet første gang. E-postappen husker adressen etterpå.</div>
+      <div class="section-foot">Lim inn adressen i «Til»-feltet første gang. E-postappen husker den etterpå.</div>
+
+      <div class="section-title">Emne for denne jobben</div>
+      <div class="group">
+        <div class="cell static">
+          <span class="two"><b id="subjectPreview" style="white-space:normal">–</b></span>
+          <button class="text-btn" id="btnCopySubject">Kopier</button>
+        </div>
+      </div>
+      <div class="section-foot">Outlook fyller inn emnet av seg selv. Bruk «Kopier» hvis du sender med Mail.</div>
 
       <div class="section-title">Ferdige kommentarer</div>
       <div class="group" id="commentList"></div>
@@ -473,13 +474,18 @@
   const blobs = new Map();   // id -> Blob
   const urls = new Map();    // id -> object URL
   const moreOpen = new Set(); // photo ids where "Mer" was pressed
+  const allWords = new Set(); // photo ids where "Vis alle ord" was pressed
+  const TOP_WORDS = 8;
   const cache = new Map();    // id -> { key, blob } final photo for the email (with stamp)
   let editingJob = false;
   let history = ls.get('history', []);      // sent jobs, newest first, no photos
 
   function newJob() { return { address: '', project: '', date: today(), hours: '', photos: [] }; }
   // Any change makes the job "not sent" again.
-  const saveJob = () => { job.sent = false; ls.set('job', job); schedulePrepare(); };
+  const saveJob = () => {
+    const was = job.sent; job.sent = false; ls.set('job', job); schedulePrepare();
+    if (was) $('sumSent').classList.add('hidden');
+  };
   const hasContent = () => job.photos.length || job.address.trim() || job.project.trim() || String(job.hours).trim();
 
   // ---------- Dialogs (replace Safari pop-ups) ----------
@@ -622,70 +628,66 @@
       const body = el('div', 'body');
       card.appendChild(body);
 
+      const stampLine = el('div', 'stamp-line');
+      const updateStamp = () => {
+        const st = stampText(p);
+        stampLine.textContent = st ? `Stempel: ${st}` : '';
+        stampLine.classList.toggle('hidden', !st);
+      };
+      updateStamp();
+      card.insertBefore(stampLine, body);
+
       const head = el('div', 'head');
-      head.appendChild(el('b', '', `Bilde ${i + 1}`));
-      const del = el('button', 'icon-danger');
-      del.innerHTML = ICON_TRASH; del.setAttribute('aria-label', `Slett bilde ${i + 1}`);
-      del.onclick = async () => {
-        const v = await ask({ message: `Bilde ${i + 1} slettes fra jobben. Bildet i Bilder-appen blir ikke slettet.`,
-          actions: [{ label: 'Slett bilde', value: 'del', destructive: true }] });
-        if (v !== 'del') return;
-        job.photos.splice(i, 1); saveJob();
-        await delBlob(p.id); await delBlob(p.id + '_o'); blobs.delete(p.id); cache.delete(p.id);
-        if (urls.has(p.id)) { URL.revokeObjectURL(urls.get(p.id)); urls.delete(p.id); }
-        moreOpen.delete(p.id);
-        renderPhotos();
-      };
-      const btns = el('div', 'head-btns');
-      const up = el('button', 'icon-btn', '↑'); up.setAttribute('aria-label', 'Flytt opp');
-      const down = el('button', 'icon-btn', '↓'); down.setAttribute('aria-label', 'Flytt ned');
-      up.disabled = i === 0; down.disabled = i === n - 1;
-      const move = d => {
-        const j = i + d;
-        [job.photos[i], job.photos[j]] = [job.photos[j], job.photos[i]];
-        saveJob(); renderPhotos();
-        const c = $('photos').children[j]; if (c) c.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-      };
-      up.onclick = () => move(-1); down.onclick = () => move(1);
-      up.style.fontSize = down.style.fontSize = '22px';
-      btns.append(up, down, del);
-      head.appendChild(btns);
+      head.appendChild(el('b', '', `Bilde ${i + 1}${p.drawn ? ' · tegnet' : ''}`));
+      const menu = el('button', 'icon-btn', '•••');
+      menu.style.fontWeight = '700'; menu.style.marginRight = '-10px';
+      menu.setAttribute('aria-label', `Valg for bilde ${i + 1}`);
+      menu.onclick = () => photoMenu(p, i, n);
+      head.appendChild(menu);
       body.appendChild(head);
 
       const chips = el('div', 'chips');
-      const all = order.concat(p.tags.filter(t => !order.includes(t)));
-      all.forEach(t => {
-        const b = el('button', 'chip' + (p.tags.includes(t) ? ' on' : ''), t);
-        b.onclick = () => {
-          const k = p.tags.indexOf(t);
-          if (k >= 0) p.tags.splice(k, 1);
-          else { p.tags.push(t); usage[t] = (usage[t] || 0) + 1; ls.set('usage', usage); }
-          b.classList.toggle('on', k < 0);
-          saveJob();
-        };
-        chips.appendChild(b);
-      });
+      const renderChips = () => {
+        chips.innerHTML = '';
+        const full = order.concat(p.tags.filter(t => !order.includes(t)));
+        const showAll = allWords.has(p.id) || full.length <= TOP_WORDS + 2;
+        const top = full.slice(0, TOP_WORDS);
+        const list = showAll ? full : full.filter(t => top.includes(t) || p.tags.includes(t));
+        list.forEach(t => {
+          const b = el('button', 'chip' + (p.tags.includes(t) ? ' on' : ''), t);
+          b.onclick = () => {
+            const k = p.tags.indexOf(t);
+            if (k >= 0) p.tags.splice(k, 1);
+            else { p.tags.push(t); usage[t] = (usage[t] || 0) + 1; ls.set('usage', usage); }
+            b.classList.toggle('on', k < 0);
+            saveJob();
+          };
+          chips.appendChild(b);
+        });
+        if (!showAll) {
+          const more = el('button', 'chip show-all', `Vis alle ord (${full.length})`);
+          more.onclick = () => { allWords.add(p.id); renderChips(); };
+          chips.appendChild(more);
+        } else if (allWords.has(p.id)) {
+          const less = el('button', 'chip show-all', 'Vis færre');
+          less.onclick = () => { allWords.delete(p.id); renderChips(); };
+          chips.appendChild(less);
+        }
+      };
+      renderChips();
       body.appendChild(chips);
 
-      const tools = el('div', 'tools');
-      const bDraw = el('button', 'tool', '✎ Tegn');
-      bDraw.onclick = () => openEditor(p);
-      tools.appendChild(bDraw);
-      if (p.drawn) {
-        const bUndraw = el('button', 'tool', 'Fjern tegning');
-        bUndraw.onclick = () => removeDrawing(p);
-        tools.appendChild(bUndraw);
-      }
       if (i > 0) {
+        const tools = el('div', 'tools');
         const bSame = el('button', 'tool', 'Samme ord som forrige');
         bSame.onclick = () => {
           p.tags = job.photos[i - 1].tags.slice(); saveJob();
-          renderPhotos();
+          renderChips();
           hud('Ord kopiert', true);
         };
         tools.appendChild(bSame);
+        body.appendChild(tools);
       }
-      body.appendChild(tools);
 
       const hasMore = moreOpen.has(p.id) || p.text.trim() || (p.material || '').trim() || String(p.hours).trim();
       const more = el('div', 'more' + (hasMore ? '' : ' hidden'));
@@ -694,21 +696,21 @@
       rt.appendChild(el('span', 'lbl', 'Egen tekst'));
       const ta = el('textarea');
       ta.rows = 2; ta.placeholder = 'F.eks. stue, ca. 12 m²'; ta.value = p.text;
-      ta.oninput = () => { p.text = ta.value; saveJob(); };
+      ta.oninput = () => { p.text = ta.value; saveJob(); updateStamp(); };
       rt.appendChild(ta);
 
       const rm = el('label', 'cell static');
       rm.appendChild(el('span', 'lbl', 'Materiell'));
       const im = el('input');
       im.placeholder = 'F.eks. 12 gipsplater'; im.value = p.material || '';
-      im.oninput = () => { p.material = im.value; saveJob(); };
+      im.oninput = () => { p.material = im.value; saveJob(); updateStamp(); };
       rm.appendChild(im);
 
       const rh = el('label', 'cell static');
       rh.appendChild(el('span', 'lbl', 'Timer'));
       const ih = el('input');
       ih.inputMode = 'decimal'; ih.placeholder = 'Valgfritt'; ih.value = p.hours;
-      ih.oninput = () => { p.hours = ih.value; saveJob(); };
+      ih.oninput = () => { p.hours = ih.value; saveJob(); updateStamp(); };
       rh.appendChild(ih);
 
       more.append(rt, rm, rh);
@@ -722,6 +724,35 @@
     });
     schedulePrepare();
     renderSize();
+  }
+
+  async function photoMenu(p, i, n) {
+    const actions = [];
+    if (i > 0) actions.push({ label: 'Flytt opp', value: 'up' });
+    if (i < n - 1) actions.push({ label: 'Flytt ned', value: 'down' });
+    actions.push({ label: 'Tegn på bildet', value: 'draw' });
+    if (p.drawn) actions.push({ label: 'Fjern tegning', value: 'undraw' });
+    actions.push({ label: 'Slett bilde', value: 'del', destructive: true });
+    const v = await ask({ title: `Bilde ${i + 1}`, actions });
+    if (v === 'up' || v === 'down') {
+      const j = v === 'up' ? i - 1 : i + 1;
+      [job.photos[i], job.photos[j]] = [job.photos[j], job.photos[i]];
+      saveJob(); renderPhotos();
+      const c = $('photos').children[j]; if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    } else if (v === 'draw') openEditor(p);
+    else if (v === 'undraw') removeDrawing(p);
+    else if (v === 'del') deletePhoto(p, i);
+  }
+
+  async function deletePhoto(p, i) {
+    const v = await ask({ message: `Bilde ${i + 1} slettes fra jobben. Bildet i Bilder-appen blir ikke slettet.`,
+      actions: [{ label: 'Slett bilde', value: 'del', destructive: true }] });
+    if (v !== 'del') return;
+    job.photos.splice(i, 1); saveJob();
+    await delBlob(p.id); await delBlob(p.id + '_o'); blobs.delete(p.id); cache.delete(p.id);
+    if (urls.has(p.id)) { URL.revokeObjectURL(urls.get(p.id)); urls.delete(p.id); }
+    moreOpen.delete(p.id); allWords.delete(p.id);
+    renderPhotos();
   }
 
   function openViewer(id) {
@@ -740,6 +771,7 @@
       const meta = [`Prosjekt ${job.project.trim()}`, fmtDate(job.date)];
       if (num(job.hours) != null) meta.push(`${fmtNum(num(job.hours))} t`);
       $('sumMeta').textContent = meta.join(' · ');
+      $('sumSent').classList.toggle('hidden', !job.sent);
     }
   }
 
@@ -783,8 +815,6 @@
   }
 
   function renderOffice() {
-    $('officeEmail').textContent = office || 'Ikke satt – trykk tannhjulet';
-    $('officeEmail').style.color = office ? '' : 'var(--muted)';
     $('btnCopyEmail').classList.toggle('hidden', !office);
     $('fOffice').value = office;
   }
@@ -971,6 +1001,7 @@
         history = [{ at: new Date().toISOString(), address: job.address.trim(), project: job.project.trim(),
           date: job.date, hours: job.hours, count: job.photos.length, text: bodyText() }].concat(history).slice(0, 100);
         ls.set('history', history);
+        renderJobView();
         const v = await ask({ style: 'alert', title: 'Ble e-posten sendt?',
           message: 'Hvis ja, tømmes jobben så du kan starte en ny.',
           actions: [{ label: 'Ja, start ny jobb', value: 'new', bold: true }, { label: 'Nei, behold jobben', value: null }] });
@@ -1074,7 +1105,7 @@
     blobs.clear(); cache.clear();
     urls.forEach(u => URL.revokeObjectURL(u)); urls.clear();
     job = newJob(); saveJob();
-    moreOpen.clear(); editingJob = false;
+    moreOpen.clear(); allWords.clear(); editingJob = false;
     renderJobFields(); renderPhotos();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -1225,7 +1256,7 @@
   $('btnSettings').onclick = () => showSettings(true);
   $('btnCloseSettings').onclick = () => showSettings(false);
   $('sheetDim').onclick = () => showSettings(false);
-  $('fOffice').oninput = e => { office = e.target.value.trim(); ls.set('office', office); };
+  $('fOffice').oninput = e => { office = e.target.value.trim(); ls.set('office', office); $('btnCopyEmail').classList.toggle('hidden', !office); };
   $('btnAddComment').onclick = () => {
     const v = $('fNewComment').value.trim();
     if (!v) return;
