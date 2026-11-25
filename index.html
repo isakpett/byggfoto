@@ -111,6 +111,19 @@
     width: 100%; border: 0; background: none; outline: none; resize: none; padding: 0; min-height: 44px;
   }
   .more .cell.stack .lbl { width: auto; font-size: 13px; color: var(--muted); }
+  .tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .tool { min-height: 36px; padding: 0 14px; border-radius: 18px; background: var(--fill); color: var(--accent); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+  .tool:active { opacity: .7; }
+  .size-info.warn { color: #ff9500; }
+  .size-info.over { color: var(--danger); font-weight: 600; }
+  .editor { position: fixed; inset: 0; background: #000; z-index: 55; display: flex; flex-direction: column; }
+  .editor .ebar { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: calc(8px + env(safe-area-inset-top)) 12px 8px; }
+  .editor .ebar button { color: #fff; padding: 10px 8px; font-size: 17px; }
+  .editor .ebar button.done { color: #5fd3a8; font-weight: 600; }
+  .editor .ebar button:disabled { opacity: .35; }
+  .editor .stage { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; padding-bottom: env(safe-area-inset-bottom); }
+  .editor canvas { max-width: 100%; max-height: 100%; touch-action: none; }
+  .editor .hint { color: #aaa; text-align: center; font-size: 14px; padding: 6px 0 calc(10px + env(safe-area-inset-bottom)); }
   .empty { padding: 34px 20px; text-align: center; color: var(--muted); }
   .empty svg { color: var(--muted); opacity: .6; margin-bottom: 8px; }
   .busy { text-align: center; color: var(--muted); padding: 10px 0 16px; font-size: 15px; }
@@ -246,6 +259,7 @@
     <div>Ingen bilder ennå</div>
     <div style="font-size:15px;margin-top:2px">Trykk «Ta bilde» nederst</div>
   </div>
+  <div class="section-foot size-info hidden" id="sizeInfo"></div>
   <div class="group" style="margin-top:14px">
     <button class="cell action" id="btnLibrary">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
@@ -319,6 +333,18 @@
 <div class="dim hidden" id="dlgDim"></div>
 <div id="dlg"></div>
 <div class="hud" id="hud"></div>
+<div class="editor hidden" id="editor" role="dialog" aria-label="Tegn på bildet">
+  <div class="ebar">
+    <button id="edCancel">Avbryt</button>
+    <span>
+      <button id="edUndo">Angre</button>
+      <button id="edClear">Fjern alt</button>
+    </span>
+    <button id="edDone" class="done">Ferdig</button>
+  </div>
+  <div class="stage"><canvas id="edCanvas"></canvas></div>
+  <div class="hint">Tegn med fingeren</div>
+</div>
 <div class="viewer hidden" id="viewer" role="dialog" aria-label="Bilde i fullskjerm">
   <img id="viewerImg" alt="">
   <button id="viewerClose">Lukk</button>
@@ -394,11 +420,12 @@
   const blobs = new Map();   // id -> Blob
   const urls = new Map();    // id -> object URL
   const moreOpen = new Set(); // photo ids where "Mer" was pressed
+  const cache = new Map();    // id -> { key, blob } final photo for the email (with stamp)
   let editingJob = false;
 
   function newJob() { return { address: '', project: '', date: today(), hours: '', photos: [] }; }
   // Any change makes the job "not sent" again.
-  const saveJob = () => { job.sent = false; ls.set('job', job); };
+  const saveJob = () => { job.sent = false; ls.set('job', job); schedulePrepare(); };
   const hasContent = () => job.photos.length || job.address.trim() || job.project.trim() || String(job.hours).trim();
 
   // ---------- Dialogs (replace Safari pop-ups) ----------
@@ -407,11 +434,14 @@
   function ask({ title, message, warn, style = 'sheet', actions }) {
     return new Promise(resolve => {
       const host = $('dlg'), dim = $('dlgDim');
-      host.innerHTML = '';
       let box;
       const close = v => {
-        box.classList.remove('show'); dim.classList.remove('show');
-        setTimeout(() => { host.innerHTML = ''; dim.classList.add('hidden'); }, 250);
+        box.classList.remove('show'); box.classList.add('closing');
+        if (!host.querySelector(':scope > :not(.closing)')) dim.classList.remove('show');
+        setTimeout(() => {
+          box.remove();
+          if (!host.children.length) dim.classList.add('hidden');
+        }, 250);
         resolve(v);
       };
       const head = el('div', 'msg' + (warn ? ' warn' : ''));
@@ -542,7 +572,7 @@
           actions: [{ label: 'Slett bilde', value: 'del', destructive: true }] });
         if (v !== 'del') return;
         job.photos.splice(i, 1); saveJob();
-        await delBlob(p.id); blobs.delete(p.id);
+        await delBlob(p.id); await delBlob(p.id + '_o'); blobs.delete(p.id); cache.delete(p.id);
         if (urls.has(p.id)) { URL.revokeObjectURL(urls.get(p.id)); urls.delete(p.id); }
         moreOpen.delete(p.id);
         renderPhotos();
@@ -564,6 +594,26 @@
         chips.appendChild(b);
       });
       body.appendChild(chips);
+
+      const tools = el('div', 'tools');
+      const bDraw = el('button', 'tool', '✎ Tegn');
+      bDraw.onclick = () => openEditor(p);
+      tools.appendChild(bDraw);
+      if (p.drawn) {
+        const bUndraw = el('button', 'tool', 'Fjern tegning');
+        bUndraw.onclick = () => removeDrawing(p);
+        tools.appendChild(bUndraw);
+      }
+      if (i > 0) {
+        const bSame = el('button', 'tool', 'Samme ord som forrige');
+        bSame.onclick = () => {
+          p.tags = job.photos[i - 1].tags.slice(); saveJob();
+          renderPhotos();
+          hud('Ord kopiert', true);
+        };
+        tools.appendChild(bSame);
+      }
+      body.appendChild(tools);
 
       const hasMore = moreOpen.has(p.id) || p.text.trim() || (p.material || '').trim() || String(p.hours).trim();
       const more = el('div', 'more' + (hasMore ? '' : ' hidden'));
@@ -598,6 +648,8 @@
         body.appendChild(bm);
       }
     });
+    schedulePrepare();
+    renderSize();
   }
 
   function openViewer(id) {
@@ -724,14 +776,115 @@
     return L.join('\n');
   }
 
-  // ---------- Send ----------
+  // ---------- Stamp, size and send ----------
+  const LIMIT = 20 * 1024 * 1024, WARN = 15 * 1024 * 1024;
+
+  function stampText(p) {
+    const parts = [];
+    const t = p.text.trim().replace(/\s*\n+\s*/g, ', ');
+    if (t) parts.push(t);
+    const h = num(p.hours);
+    if (h != null) parts.push(`${fmtNum(h)} t`);
+    return parts.join(' · ');
+  }
+  const keyFor = p => stampText(p) + '|' + (p.ver || 0);
+  const isReady = p => { const c = cache.get(p.id); return !!c && c.key === keyFor(p); };
+  const allReady = () => job.photos.every(isReady);
+
+  function wrapLines(ctx, text, maxW, maxLines) {
+    const words = text.split(' '), lines = [];
+    let line = '';
+    for (const w of words) {
+      const test = line ? line + ' ' + w : w;
+      if (ctx.measureText(test).width > maxW && line) { lines.push(line); line = w; }
+      else line = test;
+    }
+    if (line) lines.push(line);
+    if (lines.length > maxLines) {
+      lines.length = maxLines;
+      let last = lines[maxLines - 1];
+      while (last && ctx.measureText(last + ' …').width > maxW) last = last.slice(0, -1);
+      lines[maxLines - 1] = last + ' …';
+    }
+    return lines;
+  }
+
+  async function stampBlob(blob, text) {
+    const img = await loadImage(blob);
+    const w = img.naturalWidth, h = img.naturalHeight;
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const fs = Math.round(Math.max(w, h) * 0.03), pad = Math.round(fs * 0.7);
+    ctx.font = `600 ${fs}px -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    const lines = wrapLines(ctx, text, w - pad * 2, 3);
+    const lh = Math.round(fs * 1.25), bh = lines.length * lh + pad * 2 - (lh - fs);
+    ctx.fillStyle = 'rgba(0,0,0,0.62)';
+    ctx.fillRect(0, h - bh, w, bh);
+    ctx.fillStyle = '#fff'; ctx.textBaseline = 'top';
+    lines.forEach((l, k) => ctx.fillText(l, pad, h - bh + pad + k * lh));
+    return new Promise(res => c.toBlob(res, 'image/jpeg', 0.8));
+  }
+
+  let preparing = null, prepTimer;
+  function schedulePrepare() { clearTimeout(prepTimer); prepTimer = setTimeout(prepare, 700); }
+  function prepare() {
+    if (preparing) return preparing.then(() => allReady() ? null : prepare());
+    preparing = (async () => {
+      for (const p of job.photos.slice()) {
+        if (isReady(p) || !blobs.has(p.id)) continue;
+        const key = keyFor(p), st = stampText(p);
+        const out = st ? await stampBlob(blobs.get(p.id), st) : blobs.get(p.id);
+        cache.set(p.id, { key, blob: out });
+      }
+    })().catch(e => hud('Feil: ' + e.message)).finally(() => { preparing = null; renderSize(); });
+    return preparing;
+  }
+
+  function totalSize() {
+    return job.photos.reduce((n, p) => {
+      const c = cache.get(p.id);
+      return n + (c ? c.blob.size : (blobs.get(p.id) || { size: 0 }).size);
+    }, 0);
+  }
+  const mb = n => (n / 1024 / 1024).toFixed(1).replace('.', ',');
+  function renderSize() {
+    const info = $('sizeInfo'), n = totalSize();
+    info.classList.toggle('hidden', !job.photos.length);
+    info.textContent = n > LIMIT
+      ? `Størrelse: ca. ${mb(n)} MB – for stort for én e-post (maks 20 MB)`
+      : `Størrelse: ca. ${mb(n)} MB av 20 MB`;
+    info.classList.toggle('warn', n > WARN && n <= LIMIT);
+    info.classList.toggle('over', n > LIMIT);
+  }
+
   async function send() {
     if (!job.photos.length) {
       ask({ style: 'alert', title: 'Ingen bilder', message: 'Ta minst ett bilde før du sender.', actions: [{ label: 'OK', value: 1, bold: true }] });
       return;
     }
+    // iPhone only opens the share sheet right after a tap. If photos still need their stamp,
+    // prepare them first and ask for one more tap.
+    if (!allReady()) {
+      $('btnSend').textContent = 'Gjør klar …';
+      await prepare();
+      renderPhotos();
+      const ok = await ask({ style: 'alert', title: 'Klar til å sende', message: `${job.photos.length} ${job.photos.length === 1 ? 'bilde' : 'bilder'}, ca. ${mb(totalSize())} MB`,
+        actions: [{ label: 'Send', value: 1, bold: true }, { label: 'Avbryt', value: null }] });
+      if (!ok) return;
+    }
+    if (totalSize() > LIMIT) {
+      const ok = await ask({ style: 'alert', title: 'For stor e-post',
+        message: `Bildene er ca. ${mb(totalSize())} MB. Hotmail tar maks 20 MB, så e-posten kan bli stoppet. Slett noen bilder og send dem i en ny jobb.`,
+        actions: [{ label: 'Send likevel', value: 1 }, { label: 'Avbryt', value: null, bold: true }] });
+      if (!ok) return;
+    }
+    share();
+  }
+
+  async function share() {
     const files = job.photos.map((p, i) =>
-      new File([blobs.get(p.id)], fileName(i), { type: 'image/jpeg' }));
+      new File([cache.get(p.id).blob], fileName(i), { type: 'image/jpeg' }));
     // iPhone Mail ignores the title as subject when files are shared; Outlook uses it.
     const data = { files, title: subject(), text: bodyText() };
 
@@ -754,9 +907,93 @@
     }
   }
 
+  // ---------- Drawing ----------
+  let ed = null; // { p, img, strokes, cur }
+  async function openEditor(p) {
+    const img = await loadImage(blobs.get(p.id));
+    const c = $('edCanvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    ed = { p, img, strokes: [], cur: null };
+    redraw();
+    $('editor').classList.remove('hidden');
+    document.body.classList.add('locked');
+    updateEdButtons();
+  }
+  function lineW() { const c = $('edCanvas'); return Math.max(4, Math.round(Math.max(c.width, c.height) * 0.008)); }
+  function styleCtx(ctx) { ctx.strokeStyle = '#ff2d20'; ctx.lineWidth = lineW(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; }
+  function redraw() {
+    const c = $('edCanvas'), ctx = c.getContext('2d');
+    ctx.drawImage(ed.img, 0, 0);
+    styleCtx(ctx);
+    ed.strokes.forEach(st => {
+      ctx.beginPath(); ctx.moveTo(st[0].x, st[0].y);
+      if (st.length === 1) ctx.lineTo(st[0].x + 0.1, st[0].y);
+      st.forEach(pt => ctx.lineTo(pt.x, pt.y));
+      ctx.stroke();
+    });
+  }
+  function updateEdButtons() { $('edUndo').disabled = $('edClear').disabled = !ed.strokes.length; }
+  function closeEditor() {
+    $('editor').classList.add('hidden');
+    document.body.classList.remove('locked');
+    ed = null;
+  }
+  function canvasPt(e) {
+    const c = $('edCanvas'), r = c.getBoundingClientRect();
+    return { x: (e.clientX - r.left) * c.width / r.width, y: (e.clientY - r.top) * c.height / r.height };
+  }
+  {
+    const c = $('edCanvas');
+    c.addEventListener('pointerdown', e => {
+      if (!ed) return;
+      c.setPointerCapture(e.pointerId);
+      ed.cur = [canvasPt(e)]; ed.strokes.push(ed.cur);
+      const ctx = c.getContext('2d'); styleCtx(ctx);
+      ctx.beginPath(); ctx.moveTo(ed.cur[0].x, ed.cur[0].y); ctx.lineTo(ed.cur[0].x + 0.1, ed.cur[0].y); ctx.stroke();
+      updateEdButtons();
+    });
+    c.addEventListener('pointermove', e => {
+      if (!ed || !ed.cur) return;
+      const pt = canvasPt(e), prev = ed.cur[ed.cur.length - 1];
+      ed.cur.push(pt);
+      const ctx = c.getContext('2d'); styleCtx(ctx);
+      ctx.beginPath(); ctx.moveTo(prev.x, prev.y); ctx.lineTo(pt.x, pt.y); ctx.stroke();
+    });
+    const end = () => { if (ed) ed.cur = null; };
+    c.addEventListener('pointerup', end); c.addEventListener('pointercancel', end);
+  }
+  $('edUndo').onclick = () => { ed.strokes.pop(); redraw(); updateEdButtons(); };
+  $('edClear').onclick = () => { ed.strokes = []; redraw(); updateEdButtons(); };
+  $('edCancel').onclick = closeEditor;
+  $('edDone').onclick = async () => {
+    const { p, strokes } = ed;
+    if (!strokes.length) { closeEditor(); return; }
+    redraw();
+    const blob = await new Promise(res => $('edCanvas').toBlob(res, 'image/jpeg', 0.85));
+    if (!p.drawn) await putBlob(p.id + '_o', blobs.get(p.id));   // keep the clean photo
+    await putBlob(p.id, blob);
+    setPhotoBlob(p, blob);
+    p.drawn = true; p.ver = (p.ver || 0) + 1; saveJob();
+    closeEditor();
+    renderPhotos();
+  };
+  function setPhotoBlob(p, blob) {
+    blobs.set(p.id, blob);
+    if (urls.has(p.id)) { URL.revokeObjectURL(urls.get(p.id)); urls.delete(p.id); }
+  }
+  async function removeDrawing(p) {
+    const v = await ask({ message: 'Tegningen fjernes, og bildet blir som det var.',
+      actions: [{ label: 'Fjern tegning', value: 1, destructive: true }] });
+    if (!v) return;
+    const orig = await getBlob(p.id + '_o');
+    if (orig) { await putBlob(p.id, orig); await delBlob(p.id + '_o'); setPhotoBlob(p, orig); }
+    p.drawn = false; p.ver = (p.ver || 0) + 1; saveJob();
+    renderPhotos();
+  }
+
   async function resetJob() {
     await clearBlobs();
-    blobs.clear();
+    blobs.clear(); cache.clear();
     urls.forEach(u => URL.revokeObjectURL(u)); urls.clear();
     job = newJob(); saveJob();
     moreOpen.clear(); editingJob = false;
