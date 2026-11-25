@@ -868,7 +868,27 @@
     if (tot != null) meta.push(`Timer totalt: ${fmtNum(tot)}`);
     L.push(meta.join(' · '));
 
+    // Summary for the office: hours per type of work and all material.
+    // Hours on a photo with several words are split evenly between them.
     let sum = 0, anyTask = false;
+    const byWork = new Map(), mats = [];
+    job.photos.forEach(p => {
+      const h = num(p.hours), mat = (p.material || '').trim();
+      if (mat) mats.push(mat);
+      if (h == null) return;
+      sum += h; anyTask = true;
+      const keys = p.tags.length ? p.tags : ['Uten arbeid valgt'];
+      keys.forEach(k => byWork.set(k, (byWork.get(k) || 0) + h / keys.length));
+    });
+    if (anyTask || mats.length) {
+      L.push(DIV, 'SAMMENDRAG');
+      if (anyTask) {
+        L.push(`• Timer på oppgaver: ${fmtNum(sum)}`);
+        byWork.forEach((h, k) => L.push(`• ${k}: ${fmtNum(h)} t`));
+      }
+      if (mats.length) L.push(`• Materiell: ${mats.join(', ')}`);
+    }
+
     job.photos.forEach((p, i) => {
       const h = num(p.hours);
       const mat = (p.material || '').trim();
@@ -878,9 +898,8 @@
       if (p.tags.length) L.push(`• Arbeid: ${p.tags.join(', ')}`);
       if (p.text.trim()) L.push(`• Merknad: ${p.text.trim().replace(/\s*\n+\s*/g, ', ')}`);
       if (mat) L.push(`• Materiell: ${mat}`);
-      if (h != null) { L.push(`• Timer: ${fmtNum(h)}`); sum += h; anyTask = true; }
+      if (h != null) L.push(`• Timer: ${fmtNum(h)}`);
     });
-    if (anyTask) { L.push(DIV); L.push(`SUM TIMER PER OPPGAVE: ${fmtNum(sum)}`); }
     return L.join('\n');
   }
 
@@ -944,7 +963,9 @@
       for (const p of job.photos.slice()) {
         if (isReady(p) || !blobs.has(p.id)) continue;
         const key = keyFor(p), st = stampText(p);
-        const out = st ? await stampBlob(blobs.get(p.id), st) : blobs.get(p.id);
+        let out = blobs.get(p.id);
+        // If the stamp fails, send the photo without it rather than not at all.
+        if (st) { try { out = (await stampBlob(out, st)) || out; } catch (e) {} }
         cache.set(p.id, { key, blob: out });
       }
     })().catch(e => hud('Feil: ' + e.message)).finally(() => { preparing = null; renderSize(); });
