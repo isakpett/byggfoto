@@ -308,7 +308,6 @@
         await putBlob(id, blob);
         blobs.set(id, blob);
         job.photos.push({ id, tags: [], text: '', material: '', hours: '' });
-        openId = id;
         saveJob();
       }
     } catch (e) {
@@ -328,7 +327,7 @@
     return urls.get(id) || '';
   }
 
-  let openId = null;       // photo card that is open
+  const moreOpen = new Set(); // photo ids where "Mer" was pressed
   let editingJob = false;
 
   function renderPhotos() {
@@ -341,10 +340,8 @@
 
     job.photos.forEach((p, i) => {
       const card = document.createElement('div');
-      const open = p.id === openId;
-      card.className = 'card pcard' + (open ? ' open' : '');
+      card.className = 'card pcard open';
       wrap.appendChild(card);
-      if (!open) { renderCompact(card, p, i); return; }
 
       const head = document.createElement('div');
       head.className = 'photo-head';
@@ -356,7 +353,7 @@
         job.photos.splice(i, 1); saveJob();
         await delBlob(p.id); blobs.delete(p.id);
         if (urls.has(p.id)) { URL.revokeObjectURL(urls.get(p.id)); urls.delete(p.id); }
-        openId = null;
+        moreOpen.delete(p.id);
         renderPhotos();
       };
       head.appendChild(del);
@@ -386,7 +383,7 @@
       card.appendChild(chips);
 
       const more = document.createElement('div');
-      const hasMore = p.text.trim() || (p.material || '').trim() || String(p.hours).trim();
+      const hasMore = moreOpen.has(p.id) || p.text.trim() || (p.material || '').trim() || String(p.hours).trim();
       more.className = hasMore ? '' : 'hidden';
 
       const lt = document.createElement('label'); lt.textContent = 'Egen tekst (valgfritt)';
@@ -410,38 +407,11 @@
       if (!hasMore) {
         const bm = document.createElement('button');
         bm.textContent = 'Mer (tekst, materiell, timer)';
-        bm.onclick = () => { more.classList.remove('hidden'); bm.remove(); ta.focus(); };
+        bm.onclick = () => { moreOpen.add(p.id); more.classList.remove('hidden'); actions.remove(); ta.focus(); };
         actions.appendChild(bm);
+        card.appendChild(actions);
       }
-      const done = document.createElement('button');
-      done.className = 'primary'; done.textContent = 'Ferdig';
-      done.onclick = () => { openId = null; renderPhotos(); card.scrollIntoView({ block: 'nearest' }); };
-      actions.appendChild(done);
-      card.appendChild(actions);
     });
-  }
-
-  function renderCompact(card, p, i) {
-    const b = document.createElement('button');
-    b.className = 'compact';
-    const img = document.createElement('img');
-    img.className = 'thumb'; img.src = urlFor(p.id); img.alt = '';
-    const info = document.createElement('span');
-    info.className = 'info';
-    const t = document.createElement('b'); t.textContent = `Bilde ${i + 1}`;
-    const tags = document.createElement('span');
-    if (p.tags.length) { tags.className = 'tags'; tags.textContent = p.tags.join(', '); }
-    else { tags.className = 'none'; tags.textContent = 'Trykk for å velge arbeid'; }
-    info.append(t, tags);
-    const extra = [];
-    if (p.text.trim()) extra.push(p.text.trim());
-    if ((p.material || '').trim()) extra.push(p.material.trim());
-    if (num(p.hours) != null) extra.push(`${fmtNum(num(p.hours))} t`);
-    if (extra.length) { const e = document.createElement('small'); e.className = 'extra'; e.textContent = extra.join(' · '); info.appendChild(e); }
-    const chev = document.createElement('span'); chev.className = 'chev'; chev.textContent = '›';
-    b.append(img, info, chev);
-    b.onclick = () => { openId = p.id; renderPhotos(); card.scrollIntoView({ block: 'start', behavior: 'smooth' }); };
-    card.appendChild(b);
   }
 
   function openViewer(id) {
@@ -597,7 +567,7 @@
     blobs.clear();
     urls.forEach(u => URL.revokeObjectURL(u)); urls.clear();
     job = newJob(); saveJob();
-    openId = null; editingJob = false;
+    moreOpen.clear(); editingJob = false;
     renderJobFields(); renderPhotos();
     window.scrollTo({ top: 0 });
   }
