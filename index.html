@@ -91,19 +91,21 @@
 
   /* Photo cards */
   .pcard { background: var(--card); border-radius: var(--radius); overflow: hidden; margin-bottom: 14px; }
-  .pcard img.big { width: 100%; display: block; background: var(--fill); cursor: zoom-in; max-height: 70vh; object-fit: cover; }
+  .pcard .photo-wrap { position: relative; }
+  .pcard img.big { width: 100%; aspect-ratio: 16 / 10; display: block; background: var(--fill); cursor: zoom-in; object-fit: cover; }
+  .pcard .stamp { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.62); color: #fff; font-size: 14px; font-weight: 600; padding: 7px 12px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; pointer-events: none; }
   .pcard .body { padding: 12px 16px 14px; }
   .pcard .head { display: flex; align-items: center; justify-content: space-between; }
   .pcard .head b { font-size: 17px; font-weight: 600; }
   .icon-danger { color: var(--danger); width: 40px; height: 40px; display: grid; place-items: center; margin-right: -10px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .chip {
-    padding: 0 15px; min-height: 38px; border-radius: 19px; background: var(--fill);
+    padding: 0 16px; min-height: 44px; border-radius: 22px; background: var(--fill);
     font-size: 16px; font-weight: 500; transition: background .15s, color .15s;
   }
   .chip.on { background: var(--accent); color: var(--on-accent); }
   .chip.on::before { content: "✓ "; font-weight: 700; }
-  .more-btn { color: var(--accent); margin-top: 12px; min-height: 40px; display: flex; align-items: center; gap: 6px; }
+  .more-btn { color: var(--accent); margin-top: 8px; min-height: 44px; display: flex; align-items: center; gap: 6px; }
   .more { margin-top: 12px; border-radius: 10px; background: var(--bg); overflow: hidden; }
   .more .cell { min-height: 44px; }
   .more .cell .lbl { width: 96px; font-size: 16px; }
@@ -112,7 +114,7 @@
   }
   .more .cell.stack .lbl { width: auto; font-size: 13px; color: var(--muted); }
   .tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-  .tool { min-height: 36px; padding: 0 14px; border-radius: 18px; background: var(--fill); color: var(--accent); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+  .tool { min-height: 44px; padding: 0 16px; border-radius: 22px; background: var(--fill); color: var(--accent); font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
   .tool:active { opacity: .7; }
   .size-info.warn { color: #ff9500; }
   .size-info.over { color: var(--danger); font-weight: 600; }
@@ -126,10 +128,9 @@
   .editor .hint { color: #aaa; text-align: center; font-size: 14px; padding: 6px 0 calc(10px + env(safe-area-inset-bottom)); }
   .sent-badge { display: inline-block; margin: 4px 0 0 6px; background: rgba(52,199,89,.16); color: #248a3d; font-size: 13px; font-weight: 600; padding: 3px 9px; border-radius: 10px; }
   @media (prefers-color-scheme: dark) { .sent-badge { color: #30d158; } }
-  .stamp-line { font-size: 13px; color: var(--muted); padding: 8px 16px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chip.show-all { background: none; color: var(--accent); padding: 0 8px; }
   .head-btns { display: flex; align-items: center; gap: 2px; }
-  .icon-btn { color: var(--accent); width: 40px; height: 40px; display: grid; place-items: center; }
+  .icon-btn { color: var(--accent); width: 44px; height: 44px; display: grid; place-items: center; }
   .icon-btn:disabled { color: var(--muted); opacity: .35; }
   /* In-app camera */
   .cam { position: fixed; inset: 0; background: #000; z-index: 55; display: flex; flex-direction: column; color: #fff; }
@@ -212,7 +213,7 @@
     border-radius: 14px; overflow: hidden; text-align: center;
   }
   .alert.show { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-  .alert .msg { padding: 20px 16px 18px; font-size: 13px; line-height: 1.35; }
+  .alert .msg { padding: 20px 16px 18px; font-size: 13px; line-height: 1.35; white-space: pre-line; }
   .alert .msg b { display: block; font-size: 17px; font-weight: 600; margin-bottom: 4px; }
   .alert button { display: block; width: 100%; min-height: 46px; color: var(--accent); border-top: 0.5px solid var(--sep); }
   .alert button.bold { font-weight: 600; }
@@ -253,6 +254,10 @@
   </header>
 
   <!-- Job -->
+  <div id="recentBox" class="hidden">
+    <div class="section-title">Siste jobber</div>
+    <div class="group" id="recentList"></div>
+  </div>
   <div class="section-title">Jobb</div>
   <div class="group hidden" id="jobSummary">
     <button class="summary" id="btnEditJob">
@@ -266,10 +271,6 @@
       <label class="cell static"><span class="lbl">Prosjektnr.</span><input id="fProject" placeholder="1234"></label>
       <label class="cell static"><span class="lbl">Dato</span><input id="fDate" type="date"></label>
       <label class="cell static"><span class="lbl">Timer totalt</span><input id="fHours" inputmode="decimal" placeholder="Valgfritt"></label>
-    </div>
-    <div id="recentBox" class="hidden">
-      <div class="section-title">Siste jobber</div>
-      <div class="group" id="recentList"></div>
     </div>
     <div class="group hidden" id="jobDoneBox" style="margin-top:14px">
       <button class="cell action center" id="btnJobDone"><b>Ferdig</b></button>
@@ -296,7 +297,7 @@
   <input type="file" id="inLibrary" accept="image/*" multiple class="hidden">
 
   <!-- Sending -->
-  <div class="group" style="margin-top:26px">
+  <div class="group" id="newJobBox" style="margin-top:26px">
     <button class="cell danger" id="btnNewJob">Ny jobb</button>
   </div>
 </div>
@@ -620,22 +621,24 @@
       const card = el('div', 'pcard');
       wrap.appendChild(card);
 
+      const pw = el('div', 'photo-wrap');
       const img = el('img', 'big');
       img.src = urlFor(p.id); img.alt = `Bilde ${i + 1}, trykk for fullskjerm`;
       img.onclick = () => openViewer(p.id);
-      card.appendChild(img);
+      const stampEl = el('div', 'stamp');
+      pw.append(img, stampEl);
+      card.appendChild(pw);
 
       const body = el('div', 'body');
       card.appendChild(body);
 
-      const stampLine = el('div', 'stamp-line');
+      // Shows the stamp on the photo, like it will look in the email.
       const updateStamp = () => {
         const st = stampText(p);
-        stampLine.textContent = st ? `Stempel: ${st}` : '';
-        stampLine.classList.toggle('hidden', !st);
+        stampEl.textContent = st;
+        stampEl.classList.toggle('hidden', !st);
       };
       updateStamp();
-      card.insertBefore(stampLine, body);
 
       const head = el('div', 'head');
       head.appendChild(el('b', '', `Bilde ${i + 1}${p.drawn ? ' · tegnet' : ''}`));
@@ -724,7 +727,9 @@
     });
     schedulePrepare();
     renderSize();
+    renderNewJob();
   }
+  const renderNewJob = () => $('newJobBox').classList.toggle('hidden', !hasContent());
 
   async function photoMenu(p, i, n) {
     const actions = [];
@@ -801,7 +806,7 @@
       b.onclick = () => {
         job.address = r.address; job.project = r.project; saveJob();
         editingJob = false;
-        renderJobFields();
+        renderJobFields(); renderNewJob();
       };
       box.appendChild(b);
     });
@@ -967,6 +972,16 @@
     if (!job.photos.length) {
       ask({ style: 'alert', title: 'Ingen bilder', message: 'Ta minst ett bilde før du sender.', actions: [{ label: 'OK', value: 1, bold: true }] });
       return;
+    }
+    const missing = [];
+    if (!job.address.trim()) missing.push('Adresse mangler');
+    if (!job.project.trim()) missing.push('Prosjektnr. mangler');
+    const noWords = job.photos.filter(p => !p.tags.length).length;
+    if (noWords) missing.push(`${noWords} ${noWords === 1 ? 'bilde mangler' : 'bilder mangler'} arbeid`);
+    if (missing.length) {
+      const ok = await ask({ style: 'alert', title: 'Noe mangler', message: missing.join('\n') + '\n\nVil du sende likevel?',
+        actions: [{ label: 'Send likevel', value: 1 }, { label: 'Gå tilbake', value: null, bold: true }] });
+      if (!ok) return;
     }
     // iPhone only opens the share sheet right after a tap. If photos still need their stamp,
     // prepare them first and ask for one more tap.
@@ -1229,6 +1244,7 @@
     input.addEventListener('input', () => {
       job[k] = input.value; saveJob(); renderSubject();
       if (k === 'address') renderRecent();
+      renderNewJob();
       $('jobDoneBox').classList.toggle('hidden', !(job.address.trim() && job.project.trim()));
     });
   });
