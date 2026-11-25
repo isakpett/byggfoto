@@ -751,28 +751,29 @@
   }
 
   function bodyText() {
+    // Outlook turns every line into a paragraph, so: no empty lines, headings, bullets and dividers.
+    const DIV = '──────────────';
     const L = [];
-    L.push(subject(), '');
+    L.push(job.project.trim() ? `JOBBILDER – PROSJEKT ${job.project.trim()}` : 'JOBBILDER');
     L.push(`Adresse: ${job.address.trim() || '–'}`);
-    L.push(`Prosjektnr.: ${job.project.trim() || '–'}`);
-    L.push(`Dato: ${fmtDate(job.date) || '–'}`);
+    const meta = [`Dato: ${fmtDate(job.date) || '–'}`, `Antall bilder: ${job.photos.length}`];
     const tot = num(job.hours);
-    if (tot != null) L.push(`Timer totalt: ${fmtNum(tot)}`);
-    L.push(`Antall bilder: ${job.photos.length}`, '');
+    if (tot != null) meta.push(`Timer totalt: ${fmtNum(tot)}`);
+    L.push(meta.join(' · '));
 
     let sum = 0, anyTask = false;
     job.photos.forEach((p, i) => {
       const h = num(p.hours);
       const mat = (p.material || '').trim();
       if (!p.tags.length && !p.text.trim() && !mat && h == null) return;
-      L.push(`Bilde ${i + 1} (${fileName(i)})`);
-      if (p.tags.length) L.push(`  Arbeid: ${p.tags.join(', ')}`);
-      if (p.text.trim()) L.push(`  Merknad: ${p.text.trim()}`);
-      if (mat) L.push(`  Materiell: ${mat}`);
-      if (h != null) { L.push(`  Timer: ${fmtNum(h)}`); sum += h; anyTask = true; }
-      L.push('');
+      L.push(DIV);
+      L.push(`BILDE ${i + 1} (${fileName(i)})`);
+      if (p.tags.length) L.push(`• Arbeid: ${p.tags.join(', ')}`);
+      if (p.text.trim()) L.push(`• Merknad: ${p.text.trim().replace(/\s*\n+\s*/g, ', ')}`);
+      if (mat) L.push(`• Materiell: ${mat}`);
+      if (h != null) { L.push(`• Timer: ${fmtNum(h)}`); sum += h; anyTask = true; }
     });
-    if (anyTask) L.push(`Sum timer per oppgave: ${fmtNum(sum)}`);
+    if (anyTask) { L.push(DIV); L.push(`SUM TIMER PER OPPGAVE: ${fmtNum(sum)}`); }
     return L.join('\n');
   }
 
@@ -783,6 +784,8 @@
     const parts = [];
     const t = p.text.trim().replace(/\s*\n+\s*/g, ', ');
     if (t) parts.push(t);
+    const m = (p.material || '').trim();
+    if (m) parts.push(m);
     const h = num(p.hours);
     if (h != null) parts.push(`${fmtNum(h)} t`);
     return parts.join(' · ');
