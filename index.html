@@ -861,7 +861,8 @@
     // Outlook turns every line into a paragraph, so: no empty lines, headings, bullets and dividers.
     const DIV = '──────────────';
     const L = [];
-    L.push(job.project.trim() ? `JOBBILDER – PROSJEKT ${job.project.trim()}` : 'JOBBILDER');
+    // Outlook uses the first line of the text as the subject, so it must be the full subject.
+    L.push(subject());
     L.push(`Adresse: ${job.address.trim() || '–'}`);
     const meta = [`Dato: ${fmtDate(job.date) || '–'}`, `Antall bilder: ${job.photos.length}`];
     const tot = num(job.hours);
