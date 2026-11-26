@@ -319,6 +319,10 @@ test('oppdaterings-stripe og bruk uten nett', async ({ page, ctx }) => {
   await ctx.setOffline(true);
   await page.reload(); await page.waitForSelector('#btnSend');
   assert.equal(await page.title(), 'Byggfoto');
+  // The scripts and styles must also work offline, not just the page
+  assert.match(await page.textContent('#appVersion'), /^Versjon /);
+  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.bar')).position), 'fixed');
+  await addPhotos(page, 1);
   await ctx.setOffline(false);
 });
 

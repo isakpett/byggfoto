@@ -1,6 +1,10 @@
 // Offline support: try the network first so updates arrive, fall back to the saved copy.
-const CACHE = 'byggfoto-v2';
-const FILES = ['./', './index.html', './manifest.json', './version.json', './icon-180.png', './icon-512.png'];
+const CACHE = 'byggfoto-v3';
+const FILES = [
+  './', './index.html', './styles.css', './manifest.json', './version.json', './icon-180.png', './icon-512.png',
+  './js/core.js', './js/dialogs.js', './js/photos.js', './js/send.js', './js/editor.js',
+  './js/settings.js', './js/camera.js', './js/main.js',
+];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
