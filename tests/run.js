@@ -8,6 +8,8 @@ const { chromium, devices } = require('playwright');
 
 const ROOT = path.join(__dirname, '..');
 const PHOTO = path.join(__dirname, 'fixtures', 'photo.jpg');
+const PHOTO_EXIF = path.join(__dirname, 'fixtures', 'photo-exif.jpg');
+const PORTRAIT = path.join(__dirname, 'fixtures', 'portrait.jpg');
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg' };
 
 // Lets a test pretend the server has a newer version.
@@ -57,9 +59,9 @@ async function openApp({ seed = {}, offline = false } = {}) {
   return { ctx, page, errors };
 }
 
-async function addPhotos(page, n = 1) {
+async function addPhotos(page, n = 1, file = PHOTO) {
   const before = await page.locator('.pcard').count();
-  await page.setInputFiles('#inLibrary', Array(n).fill(PHOTO));
+  await page.setInputFiles('#inLibrary', Array(n).fill(file));
   await page.waitForFunction(c => document.querySelectorAll('.pcard').length === c, before + n);
 }
 
@@ -81,7 +83,8 @@ async function pickWord(page, i, word) {
 }
 
 // Presses Send and clicks through the app's own boxes until the share sheet would open.
-async function send(page) {
+// answer: which button to press on «Ble e-posten sendt?».
+async function send(page, answer = 'Ja, behold jobben') {
   await page.evaluate(() => { window.__shared = null; });
   await page.click('#btnSend');
   for (let k = 0; k < 6; k++) {
@@ -97,8 +100,7 @@ async function send(page) {
   }
   const shared = await page.evaluate(() => window.__shared);
   assert.ok(shared, 'share sheet was not opened');
-  // Answer "Ble e-posten sendt?" with "keep the job".
-  await page.locator('.alert.show button', { hasText: 'Nei, behold jobben' }).click();
+  await page.locator('.alert.show button', { hasText: answer }).click();
   await page.waitForTimeout(300);
   return shared;
 }
@@ -124,7 +126,7 @@ test('legge til bilder, ord, tekst, materiell, timer og stempel', async ({ page 
   await fillMore(page, 0, { text: 'Stue', material: '12 gipsplater' });
   await card(page, 0).locator('.qh', { hasText: /^2$/ }).click();
   assert.equal(await card(page, 0).locator('.more input').nth(1).inputValue(), '2');
-  assert.equal(await card(page, 0).locator('.stamp').textContent(), 'Stue · 12 gipsplater · 2 t');
+  assert.equal(await card(page, 0).locator('.stamp').textContent(), 'Gulv, Gips · Stue · 12 gipsplater · 2 t');
   assert.ok(!(await card(page, 1).locator('.stamp').isVisible()), 'bilde uten info skal ikke ha stempel');
   // Saved across reload
   await page.reload(); await page.waitForSelector('.pcard >> nth=1');
@@ -141,7 +143,8 @@ test('e-posttekst: emne først, sammendrag og timer delt likt', async ({ page })
   await pickWord(page, 1, 'Gulv');
   await fillMore(page, 1, { hours: '1' });
   const s = await send(page);
-  const date = await page.evaluate(() => new Date().toISOString().slice(0, 10).split('-').reverse().join('.'));
+  const iso = await page.evaluate(() => new Date().toISOString().slice(0, 10));
+  const date = iso.split('-').reverse().join('.');
   const subject = `Jobbilder – prosjekt 24039 – Nordlysveien 25b – ${date}`;
   assert.equal(s.title, subject);
   const expected = [
@@ -155,18 +158,18 @@ test('e-posttekst: emne først, sammendrag og timer delt likt', async ({ page })
     '• Riving: 1 t',
     '• Materiell: 2 plater',
     '──────────────',
-    'BILDE 1 (P24039_01.jpg)',
+    `BILDE 1 (P24039_${iso}_01.jpg)`,
     '• Arbeid: Gulv, Riving',
     '• Merknad: Stue',
     '• Materiell: 2 plater',
     '• Timer: 2',
     '──────────────',
-    'BILDE 2 (P24039_02.jpg)',
+    `BILDE 2 (P24039_${iso}_02.jpg)`,
     '• Arbeid: Gulv',
     '• Timer: 1',
   ].join('\n');
   assert.equal(s.text, expected);
-  assert.deepEqual(s.files.map(f => f.name), ['P24039_01.jpg', 'P24039_02.jpg', 'P24039_03.jpg']);
+  assert.deepEqual(s.files.map(f => f.name), [1, 2, 3].map(k => `P24039_${iso}_0${k}.jpg`));
   assert.ok(s.files.every(f => f.size > 1000 && f.size < 1500 * 1024), 'bildene skal være krympet');
   // Stamped photo is a different file than the clean one
   assert.notEqual(s.files[0].size, s.files[2].size);
@@ -287,13 +290,14 @@ test('innstillinger: sider, ord og historikk', async ({ page }) => {
 } });
 
 test('kamera i appen', async ({ page }) => {
-  await page.click('#btnCamera');
+  await page.click('#btnBurst');
   await page.waitForFunction(() => document.getElementById('camVideo').videoWidth > 0, null, { timeout: 10000 });
   await page.click('#camShutter'); await page.waitForTimeout(300);
   await page.click('#camShutter'); await page.waitForTimeout(300);
   assert.equal(await page.textContent('#camCount'), '2 bilder');
   await page.click('#camDone'); await page.waitForTimeout(400);
   assert.equal(await page.locator('.pcard').count(), 2);
+  assert.ok(await page.evaluate(() => JSON.parse(localStorage.getItem('job')).photos.every(p => p.takenAt)), 'bilder fra kameraet skal ha tidspunkt');
 });
 
 test('topplinje vises ved scrolling', async ({ page }) => {
@@ -324,6 +328,106 @@ test('oppdaterings-stripe og bruk uten nett', async ({ page, ctx }) => {
   assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.bar')).position), 'fixed');
   await addPhotos(page, 1);
   await ctx.setOffline(false);
+});
+
+test('«Nei, ikke sendt» merker ikke jobben som sendt', async ({ page }) => {
+  await page.fill('#fAddress', 'Testveien 2'); await page.fill('#fProject', '9');
+  await addPhotos(page, 1); await pickWord(page, 0, 'Gulv');
+  await send(page, 'Nei, ikke sendt');
+  await page.evaluate(() => window.scrollTo(0, 0));
+  assert.ok(!(await page.isVisible('#sumSent')), '«Sendt ✓» skal ikke vises');
+  const st = await page.evaluate(() => ({ h: localStorage.getItem('history'), sent: JSON.parse(localStorage.getItem('job')).sent }));
+  assert.ok(!st.h || st.h === '[]', 'ingenting i historikken');
+  assert.ok(!st.sent);
+  // «Ny jobb» must still warn
+  await page.click('#btnNewJob'); await page.waitForTimeout(350);
+  assert.match(await page.textContent('.asheet.show .msg'), /ikke sendt/);
+});
+
+test('«Ja, start ny jobb» lagrer og tømmer jobben', async ({ page }) => {
+  await page.fill('#fAddress', 'Testveien 3'); await page.fill('#fProject', '10');
+  await addPhotos(page, 1); await pickWord(page, 0, 'Gulv');
+  await send(page, 'Ja, start ny jobb');
+  await page.waitForTimeout(300);
+  assert.equal(await page.locator('.pcard').count(), 0);
+  assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('history'))).length, 1);
+});
+
+test('tidspunkt bildet ble tatt står i e-posten', async ({ page }) => {
+  await page.fill('#fAddress', 'Testveien 4'); await page.fill('#fProject', '11');
+  await addPhotos(page, 1, PHOTO_EXIF);
+  await addPhotos(page, 1, PHOTO);
+  await pickWord(page, 0, 'Gulv'); await pickWord(page, 1, 'Gips');
+  const s = await send(page);
+  assert.match(s.text, /BILDE 1 [^\n]*\n• Arbeid: Gulv\n• Tatt: 24\.11\.2026 kl\. 14:32/);
+  assert.doesNotMatch(s.text.split('BILDE 2')[1], /Tatt:/, 'bilde uten tidspunkt skal ikke ha «Tatt»');
+});
+
+test('iPhone-kamera er standard, kamera i appen er egen knapp', async ({ page }) => {
+  await page.evaluate(() => { window.__clicked = null; document.getElementById('inCamera').click = () => { window.__clicked = 'native'; }; });
+  await page.click('#btnCamera');
+  assert.equal(await page.evaluate(() => window.__clicked), 'native');
+  assert.ok(!(await page.isVisible('#cam')), 'kameraet i appen skal ikke åpnes');
+  // Photo taken with the iPhone camera gets "now" when it has no time
+  await page.setInputFiles('#inCamera', PHOTO);
+  await page.waitForSelector('.pcard');
+  assert.ok(await page.evaluate(() => !!JSON.parse(localStorage.getItem('job')).photos[0].takenAt));
+  await page.click('#btnBurst');
+  await page.waitForFunction(() => !document.getElementById('cam').classList.contains('hidden'));
+  await page.click('#camDone');
+});
+
+test('stempelet følger ordene du trykker på', async ({ page }) => {
+  await addPhotos(page, 2);
+  assert.ok(!(await card(page, 0).locator('.stamp').isVisible()));
+  await pickWord(page, 0, 'Gulv');
+  assert.equal(await card(page, 0).locator('.stamp').textContent(), 'Gulv');
+  await card(page, 1).locator('.tool', { hasText: 'Samme ord som forrige' }).click();
+  assert.equal(await card(page, 1).locator('.stamp').textContent(), 'Gulv');
+  await pickWord(page, 0, 'Gulv');
+  assert.ok(!(await card(page, 0).locator('.stamp').isVisible()), 'stempelet skal forsvinne når ordet fjernes');
+});
+
+test('stående bilde vises helt i forhåndsvisningen', async ({ page }) => {
+  await addPhotos(page, 1, PORTRAIT);
+  assert.equal(await card(page, 0).locator('img.big').evaluate(e => getComputedStyle(e).objectFit), 'contain');
+});
+
+test('grå tekst har nok kontrast', async ({ page }) => {
+  const r = await page.evaluate(() => {
+    const lum = c => { const [r, g, b] = c.match(/\d+/g).slice(0, 3).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+    const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((m, n) => n - m); return (x + .05) / (y + .05); };
+    return ratio(getComputedStyle(document.querySelector('.section-title')).color, getComputedStyle(document.body).backgroundColor);
+  });
+  assert.ok(r >= 4.5, `kontrast ${r.toFixed(2)} er under 4,5`);
+});
+
+test('dra ned lukker innstillingene', async ({ page }) => {
+  await page.click('#btnSettings'); await page.waitForTimeout(450);
+  const h = await page.locator('#settings header').boundingBox();
+  await page.mouse.move(h.x + 40, h.y + 10); await page.mouse.down();
+  await page.mouse.move(h.x + 40, h.y + 260, { steps: 8 }); await page.mouse.up();
+  await page.waitForTimeout(450);
+  assert.ok(!(await page.evaluate(() => document.getElementById('settings').classList.contains('show'))));
+  // A short drag springs back
+  await page.click('#btnSettings'); await page.waitForTimeout(450);
+  await page.mouse.move(h.x + 40, h.y + 10); await page.mouse.down();
+  await page.mouse.move(h.x + 40, h.y + 50, { steps: 4 }); await page.mouse.up();
+  await page.waitForTimeout(450);
+  assert.ok(await page.evaluate(() => document.getElementById('settings').classList.contains('show')));
+});
+
+test('flytting tegner bare to kort på nytt', async ({ page }) => {
+  await addPhotos(page, 4);
+  await pickWord(page, 2, 'Lekter');
+  const untouched = await page.evaluate(() => { const c = document.querySelectorAll('.pcard'); c[0].dataset.mark = 'a'; c[3].dataset.mark = 'd'; return true; });
+  await card(page, 2).locator('[aria-label^="Valg"]').click();
+  await page.click('.asheet.show >> text=Flytt opp'); await page.waitForTimeout(400);
+  const marks = await page.evaluate(() => [...document.querySelectorAll('.pcard')].map(c => c.dataset.mark || ''));
+  assert.deepEqual(marks, ['a', '', '', 'd'], 'kort 1 og 4 skal ikke tegnes på nytt');
+  assert.deepEqual(await card(page, 1).locator('.chip.on').allTextContents(), ['Lekter']);
+  assert.equal(await card(page, 1).locator('.head b').textContent(), 'Bilde 2');
+  assert.equal(await card(page, 2).locator('.head b').textContent(), 'Bilde 3');
 });
 
 // ---------- Runner ----------

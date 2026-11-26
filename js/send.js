@@ -7,10 +7,12 @@ const fmtNum = n => String(Math.round(n * 100) / 100).replace('.', ',');
 const fmtDate = d => d ? d.split('-').reverse().join('.') : '';
 const safe = s => String(s).trim().replace(/[^\wæøåÆØÅ-]+/g, '_').replace(/^_+|_+$/g, '');
 
+// The date keeps photos from different days apart in the office's project folder.
 function fileName(i) {
   const base = safe(job.project) ? `P${safe(job.project)}` : 'Bilde';
-  return `${base}_${String(i + 1).padStart(2, '0')}.jpg`;
+  return `${base}_${job.date || today()}_${String(i + 1).padStart(2, '0')}.jpg`;
 }
+const fmtTaken = t => { const [d, tm] = t.split('T'); return `${fmtDate(d)} kl. ${tm}`; };
 
 function subject() {
   const parts = ['Jobbilder'];
@@ -63,8 +65,18 @@ function bodyText() {
     if (p.text.trim()) L.push(`• Merknad: ${p.text.trim().replace(/\s*\n+\s*/g, ', ')}`);
     if (mat) L.push(`• Materiell: ${mat}`);
     if (h != null) L.push(`• Timer: ${fmtNum(h)}`);
+    if (p.takenAt) L.push(`• Tatt: ${fmtTaken(p.takenAt)}`);
   });
   return L.join('\n');
+}
+
+function markSent(text) {
+  job.sent = true; ls.set('job', job);
+  addRecent();
+  sentJobs = [{ at: new Date().toISOString(), address: job.address.trim(), project: job.project.trim(),
+    date: job.date, hours: job.hours, count: job.photos.length, text }].concat(sentJobs).slice(0, 100);
+  ls.set('history', sentJobs);
+  renderJobView();
 }
 
 // ---------- Stamp, size and send ----------
@@ -72,6 +84,7 @@ const LIMIT = 20 * 1024 * 1024, WARN = 15 * 1024 * 1024;
 
 function stampText(p) {
   const parts = [];
+  if (p.tags.length) parts.push(p.tags.join(', '));
   const t = p.text.trim().replace(/\s*\n+\s*/g, ', ');
   if (t) parts.push(t);
   const m = (p.material || '').trim();
@@ -196,15 +209,13 @@ async function share() {
   if (navigator.canShare && navigator.canShare({ files })) {
     try {
       await navigator.share(data);
-      job.sent = true; ls.set('job', job);
-      addRecent();
-      sentJobs = [{ at: new Date().toISOString(), address: job.address.trim(), project: job.project.trim(),
-        date: job.date, hours: job.hours, count: job.photos.length, text: bodyText() }].concat(sentJobs).slice(0, 100);
-      ls.set('history', sentJobs);
-      renderJobView();
+      // The share sheet closes when an app is picked, not when the email is sent.
+      // So only mark the job as sent when the user says so.
       const v = await ask({ style: 'alert', title: 'Ble e-posten sendt?',
-        message: 'Hvis ja, tømmes jobben så du kan starte en ny.',
-        actions: [{ label: 'Ja, start ny jobb', value: 'new', bold: true }, { label: 'Nei, behold jobben', value: null }] });
+        message: 'Svar «Nei» hvis du avbrøt i e-postappen.',
+        actions: [{ label: 'Ja, start ny jobb', value: 'new', bold: true }, { label: 'Ja, behold jobben', value: 'keep' }, { label: 'Nei, ikke sendt', value: null }] });
+      if (!v) return;
+      markSent(data.text);
       if (v === 'new') resetJob();
     } catch (e) {
       if (e.name !== 'AbortError') hud('Deling feilet: ' + e.message);

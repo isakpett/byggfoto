@@ -39,7 +39,7 @@ async function snap() {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   c.getContext('2d').drawImage(v, 0, 0, w, h);
   const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', JPEG_QUALITY));
-  await addBlob(blob);
+  await addBlob(blob, nowLocal());
   camAdded++;
   $('camCount').textContent = `${camAdded} ${camAdded === 1 ? 'bilde' : 'bilder'}`;
   const t = $('camThumb'); t.src = urlFor(job.photos[job.photos.length - 1].id); t.classList.remove('none');

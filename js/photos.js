@@ -21,11 +21,46 @@ async function compress(file) {
   return new Promise(res => c.toBlob(res, 'image/jpeg', JPEG_QUALITY));
 }
 
-async function addBlob(blob) {
+// Reads when a JPEG photo was taken (EXIF DateTimeOriginal) before shrinking removes it.
+// Returns "YYYY-MM-DDTHH:MM" or null.
+async function readTakenAt(file) {
+  try {
+    const v = new DataView(await file.slice(0, 256 * 1024).arrayBuffer());
+    if (v.getUint16(0) !== 0xFFD8) return null;
+    let o = 2;
+    while (o + 4 < v.byteLength) {
+      const marker = v.getUint16(o), len = v.getUint16(o + 2);
+      if (marker === 0xFFE1 && v.getUint32(o + 4) === 0x45786966) {      // "Exif"
+        const t = o + 10, le = v.getUint16(t) === 0x4949;
+        const u16 = x => v.getUint16(t + x, le), u32 = x => v.getUint32(t + x, le);
+        const readAscii = (x, n) => { let s = ''; for (let k = 0; k < n - 1; k++) s += String.fromCharCode(v.getUint8(t + x + k)); return s; };
+        const findTag = (ifd, tag) => {
+          const n = u16(ifd);
+          for (let k = 0; k < n; k++) { const e = ifd + 2 + k * 12; if (u16(e) === tag) return e; }
+          return null;
+        };
+        const ifd0 = u32(4);
+        let e = null;
+        const exifPtr = findTag(ifd0, 0x8769);
+        if (exifPtr) e = findTag(u32(exifPtr + 8), 0x9003);              // DateTimeOriginal
+        if (!e) e = findTag(ifd0, 0x0132);                                // DateTime
+        if (!e) return null;
+        const m = readAscii(u32(e + 8), u32(e + 4)).match(/^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d)/);
+        return m && m[1] !== '0000' ? `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}` : null;
+      }
+      if ((marker & 0xFF00) !== 0xFF00) return null;
+      o += 2 + len;
+    }
+  } catch (e) {}
+  return null;
+}
+const nowLocal = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
+
+async function addBlob(blob, takenAt = null) {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   await putBlob(id, blob);
   blobs.set(id, blob);
-  job.photos.push({ id, tags: [], text: '', material: '', hours: '' });
+  job.photos.push({ id, tags: [], text: '', material: '', hours: '', takenAt });
   saveJob();
   return id;
 }
@@ -37,11 +72,15 @@ function afterAdd() {
   if (last) last.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
-async function addFiles(files) {
+// fromCamera: the photo was just taken, so "now" is a safe fallback when it has no EXIF time.
+async function addFiles(files, fromCamera = false) {
   if (!files.length) return;
   $('busy').classList.remove('hidden');
   try {
-    for (const f of files) await addBlob(await compress(f));
+    for (const f of files) {
+      const takenAt = (await readTakenAt(f)) || (fromCamera ? nowLocal() : null);
+      await addBlob(await compress(f), takenAt);
+    }
   } catch (e) {
     hud('Feil: ' + e.message);
   }
@@ -63,131 +102,133 @@ function renderPhotos() {
   $('photoCount').textContent = n ? `(${n})` : '';
   $('btnSend').textContent = n ? `Send ${n} ${n === 1 ? 'bilde' : 'bilder'}` : 'Send til kontoret';
 
-  job.photos.forEach((p, i) => {
-    const card = el('div', 'pcard');
-    wrap.appendChild(card);
-
-    const pw = el('div', 'photo-wrap');
-    const img = el('img', 'big');
-    img.src = urlFor(p.id); img.alt = `Bilde ${i + 1}, trykk for fullskjerm`;
-    img.onclick = () => openViewer(p.id);
-    const stampEl = el('div', 'stamp');
-    pw.append(img, stampEl);
-    card.appendChild(pw);
-
-    const body = el('div', 'body');
-    card.appendChild(body);
-
-    // Shows the stamp on the photo, like it will look in the email.
-    const updateStamp = () => {
-      const st = stampText(p);
-      stampEl.textContent = st;
-      stampEl.classList.toggle('hidden', !st);
-    };
-    updateStamp();
-
-    const head = el('div', 'head');
-    head.appendChild(el('b', '', `Bilde ${i + 1}${p.drawn ? ' · tegnet' : ''}`));
-    const menu = el('button', 'icon-btn', '•••');
-    menu.style.fontWeight = '700'; menu.style.marginRight = '-10px';
-    menu.setAttribute('aria-label', `Valg for bilde ${i + 1}`);
-    menu.onclick = () => photoMenu(p, i, n);
-    const pen = el('button', 'icon-btn');
-    pen.innerHTML = ICON_PEN; pen.setAttribute('aria-label', `Tegn på bilde ${i + 1}`);
-    pen.onclick = () => openEditor(p);
-    const hb = el('div', 'head-btns');
-    hb.append(pen, menu);
-    head.appendChild(hb);
-    body.appendChild(head);
-
-    const chips = el('div', 'chips');
-    const renderChips = () => {
-      chips.innerHTML = '';
-      const full = order.concat(p.tags.filter(t => !order.includes(t)));
-      const showAll = allWords.has(p.id) || full.length <= TOP_WORDS + 2;
-      const top = full.slice(0, TOP_WORDS);
-      const list = showAll ? full : full.filter(t => top.includes(t) || p.tags.includes(t));
-      list.forEach(t => {
-        const b = el('button', 'chip' + (p.tags.includes(t) ? ' on' : ''), t);
-        b.onclick = () => {
-          const k = p.tags.indexOf(t);
-          if (k >= 0) p.tags.splice(k, 1);
-          else { p.tags.push(t); usage[t] = (usage[t] || 0) + 1; ls.set('usage', usage); }
-          b.classList.toggle('on', k < 0);
-          saveJob();
-        };
-        chips.appendChild(b);
-      });
-      if (!showAll) {
-        const more = el('button', 'chip show-all', `Vis alle ord (${full.length})`);
-        more.onclick = () => { allWords.add(p.id); renderChips(); };
-        chips.appendChild(more);
-      } else if (allWords.has(p.id)) {
-        const less = el('button', 'chip show-all', 'Vis færre');
-        less.onclick = () => { allWords.delete(p.id); renderChips(); };
-        chips.appendChild(less);
-      }
-    };
-    renderChips();
-    body.appendChild(chips);
-
-    if (i > 0) {
-      const tools = el('div', 'tools');
-      const bSame = el('button', 'tool', 'Samme ord som forrige');
-      bSame.onclick = () => {
-        p.tags = job.photos[i - 1].tags.slice(); saveJob();
-        renderChips();
-        hud('Ord kopiert', true);
-      };
-      tools.appendChild(bSame);
-      body.appendChild(tools);
-    }
-
-    const hasMore = moreOpen.has(p.id) || p.text.trim() || (p.material || '').trim() || String(p.hours).trim();
-    const more = el('div', 'more' + (hasMore ? '' : ' hidden'));
-
-    const rt = el('label', 'cell static stack');
-    rt.appendChild(el('span', 'lbl', 'Egen tekst'));
-    const ta = el('textarea');
-    ta.rows = 2; ta.placeholder = 'F.eks. stue, ca. 12 m²'; ta.value = p.text;
-    ta.oninput = () => { p.text = ta.value; saveJob(); updateStamp(); };
-    rt.appendChild(ta);
-
-    const rm = el('label', 'cell static');
-    rm.appendChild(el('span', 'lbl', 'Materiell'));
-    const im = el('input');
-    im.placeholder = 'F.eks. 12 gipsplater'; im.value = p.material || '';
-    im.oninput = () => { p.material = im.value; saveJob(); updateStamp(); };
-    rm.appendChild(im);
-
-    const rh = el('label', 'cell static');
-    rh.appendChild(el('span', 'lbl', 'Timer'));
-    const ih = el('input');
-    ih.inputMode = 'decimal'; ih.placeholder = 'Valgfritt'; ih.value = p.hours;
-    const quick = el('div', 'quick-hours');
-    const markQuick = () => quick.querySelectorAll('button').forEach(q => q.classList.toggle('on', num(q.textContent) === num(p.hours)));
-    ['0,5', '1', '2', '4', '8'].forEach(v => {
-      const q = el('button', 'qh', v);
-      q.setAttribute('aria-label', `${v} timer`);
-      q.onclick = () => { ih.value = p.hours = v; saveJob(); updateStamp(); markQuick(); };
-      quick.appendChild(q);
-    });
-    ih.oninput = () => { p.hours = ih.value; saveJob(); updateStamp(); markQuick(); };
-    rh.appendChild(ih);
-    markQuick();
-
-    more.append(rt, rm, rh, quick);
-    body.appendChild(more);
-
-    if (!hasMore) {
-      const bm = el('button', 'more-btn', '＋ Tekst, materiell, timer');
-      bm.onclick = () => { moreOpen.add(p.id); more.classList.remove('hidden'); bm.remove(); ta.focus(); };
-      body.appendChild(bm);
-    }
-  });
+  job.photos.forEach((p, i) => wrap.appendChild(buildCard(p, i, n)));
   schedulePrepare();
   renderSize();
   renderNewJob();
+}
+
+function buildCard(p, i, n) {
+  const card = el('div', 'pcard');
+
+  const pw = el('div', 'photo-wrap');
+  const img = el('img', 'big');
+  img.src = urlFor(p.id); img.alt = `Bilde ${i + 1}, trykk for fullskjerm`;
+  img.onclick = () => openViewer(p.id);
+  const stampEl = el('div', 'stamp');
+  pw.append(img, stampEl);
+  card.appendChild(pw);
+
+  const body = el('div', 'body');
+  card.appendChild(body);
+
+  // Shows the stamp on the photo, like it will look in the email.
+  const updateStamp = () => {
+    const st = stampText(p);
+    stampEl.textContent = st;
+    stampEl.classList.toggle('hidden', !st);
+  };
+  updateStamp();
+
+  const head = el('div', 'head');
+  head.appendChild(el('b', '', `Bilde ${i + 1}${p.drawn ? ' · tegnet' : ''}`));
+  const menu = el('button', 'icon-btn', '•••');
+  menu.style.fontWeight = '700'; menu.style.marginRight = '-10px';
+  menu.setAttribute('aria-label', `Valg for bilde ${i + 1}`);
+  menu.onclick = () => photoMenu(p, i, n);
+  const pen = el('button', 'icon-btn');
+  pen.innerHTML = ICON_PEN; pen.setAttribute('aria-label', `Tegn på bilde ${i + 1}`);
+  pen.onclick = () => openEditor(p);
+  const hb = el('div', 'head-btns');
+  hb.append(pen, menu);
+  head.appendChild(hb);
+  body.appendChild(head);
+
+  const chips = el('div', 'chips');
+  const renderChips = () => {
+    chips.innerHTML = '';
+    const full = order.concat(p.tags.filter(t => !order.includes(t)));
+    const showAll = allWords.has(p.id) || full.length <= TOP_WORDS + 2;
+    const top = full.slice(0, TOP_WORDS);
+    const list = showAll ? full : full.filter(t => top.includes(t) || p.tags.includes(t));
+    list.forEach(t => {
+      const b = el('button', 'chip' + (p.tags.includes(t) ? ' on' : ''), t);
+      b.onclick = () => {
+        const k = p.tags.indexOf(t);
+        if (k >= 0) p.tags.splice(k, 1);
+        else { p.tags.push(t); usage[t] = (usage[t] || 0) + 1; ls.set('usage', usage); }
+        b.classList.toggle('on', k < 0);
+        saveJob(); updateStamp();
+      };
+      chips.appendChild(b);
+    });
+    if (!showAll) {
+      const more = el('button', 'chip show-all', `Vis alle ord (${full.length})`);
+      more.onclick = () => { allWords.add(p.id); renderChips(); };
+      chips.appendChild(more);
+    } else if (allWords.has(p.id)) {
+      const less = el('button', 'chip show-all', 'Vis færre');
+      less.onclick = () => { allWords.delete(p.id); renderChips(); };
+      chips.appendChild(less);
+    }
+  };
+  renderChips();
+  body.appendChild(chips);
+
+  if (i > 0) {
+    const tools = el('div', 'tools');
+    const bSame = el('button', 'tool', 'Samme ord som forrige');
+    bSame.onclick = () => {
+      p.tags = job.photos[i - 1].tags.slice(); saveJob();
+      renderChips(); updateStamp();
+      hud('Ord kopiert', true);
+    };
+    tools.appendChild(bSame);
+    body.appendChild(tools);
+  }
+
+  const hasMore = moreOpen.has(p.id) || p.text.trim() || (p.material || '').trim() || String(p.hours).trim();
+  const more = el('div', 'more' + (hasMore ? '' : ' hidden'));
+
+  const rt = el('label', 'cell static stack');
+  rt.appendChild(el('span', 'lbl', 'Egen tekst'));
+  const ta = el('textarea');
+  ta.rows = 2; ta.placeholder = 'F.eks. stue, ca. 12 m²'; ta.value = p.text;
+  ta.oninput = () => { p.text = ta.value; saveJob(); updateStamp(); };
+  rt.appendChild(ta);
+
+  const rm = el('label', 'cell static');
+  rm.appendChild(el('span', 'lbl', 'Materiell'));
+  const im = el('input');
+  im.placeholder = 'F.eks. 12 gipsplater'; im.value = p.material || '';
+  im.oninput = () => { p.material = im.value; saveJob(); updateStamp(); };
+  rm.appendChild(im);
+
+  const rh = el('label', 'cell static');
+  rh.appendChild(el('span', 'lbl', 'Timer'));
+  const ih = el('input');
+  ih.inputMode = 'decimal'; ih.placeholder = 'Valgfritt'; ih.value = p.hours;
+  const quick = el('div', 'quick-hours');
+  const markQuick = () => quick.querySelectorAll('button').forEach(q => q.classList.toggle('on', num(q.textContent) === num(p.hours)));
+  ['0,5', '1', '2', '4', '8'].forEach(v => {
+    const q = el('button', 'qh', v);
+    q.setAttribute('aria-label', `${v} timer`);
+    q.onclick = () => { ih.value = p.hours = v; saveJob(); updateStamp(); markQuick(); };
+    quick.appendChild(q);
+  });
+  ih.oninput = () => { p.hours = ih.value; saveJob(); updateStamp(); markQuick(); };
+  rh.appendChild(ih);
+  markQuick();
+
+  more.append(rt, rm, rh, quick);
+  body.appendChild(more);
+
+  if (!hasMore) {
+    const bm = el('button', 'more-btn', '＋ Tekst, materiell, timer');
+    bm.onclick = () => { moreOpen.add(p.id); more.classList.remove('hidden'); bm.remove(); ta.focus(); };
+    body.appendChild(bm);
+  }
+  return card;
 }
 const renderNewJob = () => $('newJobBox').classList.toggle('hidden', !hasContent());
 
@@ -201,8 +242,11 @@ async function photoMenu(p, i, n) {
   if (v === 'up' || v === 'down') {
     const j = v === 'up' ? i - 1 : i + 1;
     [job.photos[i], job.photos[j]] = [job.photos[j], job.photos[i]];
-    saveJob(); renderPhotos();
-    const c = $('photos').children[j]; if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    saveJob();
+    // Only rebuild the two cards that swapped places, so the screen does not jump.
+    const wrap = $('photos');
+    for (const k of [i, j]) wrap.replaceChild(buildCard(job.photos[k], k, n), wrap.children[k]);
+    const c = wrap.children[j]; if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' });
   } else if (v === 'draw') openEditor(p);
   else if (v === 'undraw') removeDrawing(p);
   else if (v === 'del') deletePhoto(p, i);

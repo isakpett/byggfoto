@@ -106,3 +106,33 @@ async function resetJob() {
   renderJobFields(); renderPhotos();
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+// ---------- Drag down to close settings ----------
+{
+  const sh = $('settings');
+  let startY = null, dy = 0;
+  const onDown = e => {
+    if (e.target.closest('button')) return;
+    startY = e.clientY; dy = 0;
+    sh.classList.add('dragging');
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onMove = e => {
+    if (startY == null) return;
+    dy = Math.max(0, e.clientY - startY);
+    sh.style.transform = `translateY(${dy}px)`;
+  };
+  const onUp = () => {
+    if (startY == null) return;
+    startY = null;
+    sh.classList.remove('dragging');
+    sh.style.transform = '';
+    if (dy > 110) showSettings(false);
+  };
+  for (const h of [sh.querySelector('.grabber'), sh.querySelector('header')]) {
+    h.addEventListener('pointerdown', onDown);
+    h.addEventListener('pointermove', onMove);
+    h.addEventListener('pointerup', onUp);
+    h.addEventListener('pointercancel', onUp);
+  }
+}

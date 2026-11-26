@@ -2,7 +2,7 @@
 // All files share one scope; they load in the order listed in index.html.
 
 // Bump this and version.json together on every change, so phones see the update.
-const APP_VERSION = '2026.11.26-4';
+const APP_VERSION = '2026.11.26-5';
 const DEFAULT_COMMENTS = [
   'Kubbing', 'Underlag', 'Gulv', 'Kjøkken', 'Staving', 'Retting',
   'Isolering', 'Spikerslag', 'Himling', 'Veggplater', 'Gips',

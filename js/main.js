@@ -11,9 +11,10 @@
     $('jobDoneBox').classList.toggle('hidden', !(job.address.trim() && job.project.trim()));
   });
 });
-$('btnCamera').onclick = openCam;
+$('btnCamera').onclick = () => $('inCamera').click();
+$('btnBurst').onclick = openCam;
 $('btnLibrary').onclick = () => $('inLibrary').click();
-$('inCamera').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
+$('inCamera').onchange = e => { addFiles([...e.target.files], true); e.target.value = ''; };
 $('inLibrary').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
 $('btnSend').onclick = send;
 $('btnEditJob').onclick = () => { editingJob = true; renderJobView(); $('fAddress').focus(); };
