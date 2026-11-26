@@ -115,6 +115,8 @@ function buildCard(p, i, n) {
   const img = el('img', 'big');
   img.src = urlFor(p.id); img.alt = `Bilde ${i + 1}, trykk for fullskjerm`;
   img.onclick = () => openViewer(p.id);
+  // Landscape photos fill the width with no dark bars; portrait ones keep the 16:10 box and show whole.
+  img.onload = () => { if (img.naturalWidth >= img.naturalHeight) img.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`; };
   const stampEl = el('div', 'stamp');
   pw.append(img, stampEl);
   card.appendChild(pw);

@@ -34,8 +34,8 @@ function startServer() {
 // ---------- Helpers ----------
 let browser, base;
 
-async function openApp({ seed = {}, offline = false } = {}) {
-  const ctx = await browser.newContext({ ...devices['iPhone 13'], locale: 'nb-NO', permissions: ['camera'] });
+async function openApp({ seed = {}, colorScheme = 'light' } = {}) {
+  const ctx = await browser.newContext({ ...devices['iPhone 13'], locale: 'nb-NO', permissions: ['camera'], colorScheme });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -388,9 +388,17 @@ test('stempelet følger ordene du trykker på', async ({ page }) => {
   assert.ok(!(await card(page, 0).locator('.stamp').isVisible()), 'stempelet skal forsvinne når ordet fjernes');
 });
 
-test('stående bilde vises helt i forhåndsvisningen', async ({ page }) => {
+test('stående bilde vises helt, liggende fyller bredden', async ({ page }) => {
   await addPhotos(page, 1, PORTRAIT);
-  assert.equal(await card(page, 0).locator('img.big').evaluate(e => getComputedStyle(e).objectFit), 'contain');
+  await addPhotos(page, 1, PHOTO);
+  await page.waitForTimeout(300);
+  const box = i => card(page, i).locator('img.big').evaluate(e => {
+    const r = e.getBoundingClientRect(); return { fit: getComputedStyle(e).objectFit, ratio: r.width / r.height, img: e.naturalWidth / e.naturalHeight };
+  });
+  const portrait = await box(0), landscape = await box(1);
+  assert.equal(portrait.fit, 'contain');
+  assert.ok(Math.abs(portrait.ratio - 1.6) < 0.02, 'stående bilde beholder 16:10-boksen');
+  assert.ok(Math.abs(landscape.ratio - landscape.img) < 0.02, 'liggende bilde har samme form som bildet, uten svarte felt');
 });
 
 test('grå tekst har nok kontrast', async ({ page }) => {
@@ -429,6 +437,21 @@ test('flytting tegner bare to kort på nytt', async ({ page }) => {
   assert.equal(await card(page, 1).locator('.head b').textContent(), 'Bilde 2');
   assert.equal(await card(page, 2).locator('.head b').textContent(), 'Bilde 3');
 });
+
+for (const scheme of ['light', 'dark']) {
+  test(`hvit tekst på grønt har nok kontrast (${scheme === 'light' ? 'lys' : 'mørk'} modus)`, async ({ page }) => {
+    await addPhotos(page, 1);
+    await pickWord(page, 0, 'Gulv');
+    await page.waitForTimeout(300); // let the colour transition finish
+    const r = await page.evaluate(() => {
+      const lum = c => { const [r, g, b] = c.match(/\d+/g).slice(0, 3).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * r + .7152 * g + .0722 * b; };
+      const ratio = e => { const cs = getComputedStyle(e); const [x, y] = [lum(cs.color), lum(cs.backgroundColor)].sort((m, n) => n - m); return (x + .05) / (y + .05); };
+      return { send: ratio(document.getElementById('btnSend')), chip: ratio(document.querySelector('.chip.on')) };
+    });
+    assert.ok(r.send >= 4.5, `Send-knappen: ${r.send.toFixed(2)}`);
+    assert.ok(r.chip >= 4.5, `valgt ord: ${r.chip.toFixed(2)}`);
+  }, { colorScheme: scheme });
+}
 
 // ---------- Runner ----------
 (async () => {
