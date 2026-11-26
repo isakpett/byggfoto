@@ -1,6 +1,6 @@
 // Offline support: try the network first so updates arrive, fall back to the saved copy.
-const CACHE = 'byggfoto-v1';
-const FILES = ['./', './index.html', './manifest.json', './icon-180.png', './icon-512.png'];
+const CACHE = 'byggfoto-v2';
+const FILES = ['./', './index.html', './manifest.json', './version.json', './icon-180.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
@@ -18,7 +18,8 @@ self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   e.respondWith(
-    fetch(req)
+    // cache: 'no-cache' asks the server every time instead of using a copy up to 10 minutes old.
+    fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' })
       .then(res => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
         return res;
