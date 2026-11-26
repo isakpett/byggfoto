@@ -426,6 +426,7 @@
   };
   const ICON_TRASH = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6M14 11v6"/></svg>';
   const ICON_CHECK = '<svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5"/></svg>';
+  const ICON_PEN = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
   const ICON_CHEV = '<svg class="chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>';
 
   // ---------- IndexedDB for photo blobs ----------
@@ -646,7 +647,12 @@
       menu.style.fontWeight = '700'; menu.style.marginRight = '-10px';
       menu.setAttribute('aria-label', `Valg for bilde ${i + 1}`);
       menu.onclick = () => photoMenu(p, i, n);
-      head.appendChild(menu);
+      const pen = el('button', 'icon-btn');
+      pen.innerHTML = ICON_PEN; pen.setAttribute('aria-label', `Tegn på bilde ${i + 1}`);
+      pen.onclick = () => openEditor(p);
+      const hb = el('div', 'head-btns');
+      hb.append(pen, menu);
+      head.appendChild(hb);
       body.appendChild(head);
 
       const chips = el('div', 'chips');
@@ -735,7 +741,6 @@
     const actions = [];
     if (i > 0) actions.push({ label: 'Flytt opp', value: 'up' });
     if (i < n - 1) actions.push({ label: 'Flytt ned', value: 'down' });
-    actions.push({ label: 'Tegn på bildet', value: 'draw' });
     if (p.drawn) actions.push({ label: 'Fjern tegning', value: 'undraw' });
     actions.push({ label: 'Slett bilde', value: 'del', destructive: true });
     const v = await ask({ title: `Bilde ${i + 1}`, actions });
