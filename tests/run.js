@@ -158,18 +158,18 @@ test('e-posttekst: emne først, sammendrag og timer delt likt', async ({ page })
     '• Riving: 1 t',
     '• Materiell: 2 plater',
     '──────────────',
-    `BILDE 1 (P24039_${iso}_01.jpg)`,
+    `BILDE 1 (P24039_${iso}_01_Gulv-Riving.jpg)`,
     '• Arbeid: Gulv, Riving',
     '• Merknad: Stue',
     '• Materiell: 2 plater',
     '• Timer: 2',
     '──────────────',
-    `BILDE 2 (P24039_${iso}_02.jpg)`,
+    `BILDE 2 (P24039_${iso}_02_Gulv.jpg)`,
     '• Arbeid: Gulv',
     '• Timer: 1',
   ].join('\n');
   assert.equal(s.text, expected);
-  assert.deepEqual(s.files.map(f => f.name), [1, 2, 3].map(k => `P24039_${iso}_0${k}.jpg`));
+  assert.deepEqual(s.files.map(f => f.name), [`P24039_${iso}_01_Gulv-Riving.jpg`, `P24039_${iso}_02_Gulv.jpg`, `P24039_${iso}_03.jpg`]);
   assert.ok(s.files.every(f => f.size > 1000 && f.size < 1500 * 1024), 'bildene skal være krympet');
   // Stamped photo is a different file than the clean one
   assert.notEqual(s.files[0].size, s.files[2].size);
@@ -358,8 +358,9 @@ test('tidspunkt bildet ble tatt står i e-posten', async ({ page }) => {
   await addPhotos(page, 1, PHOTO_EXIF);
   await addPhotos(page, 1, PHOTO);
   await pickWord(page, 0, 'Gulv'); await pickWord(page, 1, 'Gips');
+  await fillMore(page, 0, { text: 'Stue' }); await fillMore(page, 1, { text: 'Bad' });
   const s = await send(page);
-  assert.match(s.text, /BILDE 1 [^\n]*\n• Arbeid: Gulv\n• Tatt: 24\.11\.2026 kl\. 14:32/);
+  assert.match(s.text, /BILDE 1 [^\n]*\n• Arbeid: Gulv\n• Merknad: Stue\n• Tatt: 24\.11\.2026 kl\. 14:32/);
   assert.doesNotMatch(s.text.split('BILDE 2')[1], /Tatt:/, 'bilde uten tidspunkt skal ikke ha «Tatt»');
 });
 
@@ -474,6 +475,19 @@ test('etter å ha lagt til mange bilder står du på det første nye', async ({ 
   const top = await card(page, 2).evaluate(e => e.getBoundingClientRect().top);
   const bar = await page.evaluate(() => document.getElementById('topbar').getBoundingClientRect().bottom);
   assert.ok(top >= bar && top < bar + 80, `bilde 3 skal stå rett under topplinjen (top=${Math.round(top)}, linje=${Math.round(bar)})`);
+});
+
+test('ord i filnavnet, og bare bilder med ekstra info i teksten', async ({ page }) => {
+  await page.fill('#fAddress', 'Testveien 5'); await page.fill('#fProject', '12');
+  await addPhotos(page, 3);
+  await pickWord(page, 0, 'Kjøkken');
+  await pickWord(page, 1, 'Dører og vinduer'); await pickWord(page, 1, 'Søppel');
+  await fillMore(page, 2, { material: '3 lister' });
+  const s = await send(page);
+  const iso = await page.evaluate(() => new Date().toISOString().slice(0, 10));
+  assert.deepEqual(s.files.map(f => f.name), [`P12_${iso}_01_Kjokken.jpg`, `P12_${iso}_02_DorerOgVinduer-Soppel.jpg`, `P12_${iso}_03.jpg`]);
+  assert.doesNotMatch(s.text, /BILDE 1|BILDE 2/, 'bilder med bare ord skal ikke stå i teksten');
+  assert.match(s.text, /BILDE 3 \(P12_[^)]*_03\.jpg\)\n• Materiell: 3 lister/);
 });
 
 // ---------- Runner ----------

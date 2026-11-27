@@ -8,9 +8,18 @@ const fmtDate = d => d ? d.split('-').reverse().join('.') : '';
 const safe = s => String(s).trim().replace(/[^\wæøåÆØÅ-]+/g, '_').replace(/^_+|_+$/g, '');
 
 // The date keeps photos from different days apart in the office's project folder.
+// The chosen words go in the file name too, in plain letters (æ ø å become ae o a),
+// so the name reads the same in every email program.
+const ascii = s => String(s).replace(/æ/g, 'ae').replace(/Æ/g, 'Ae').replace(/[øØ]/g, m => m === 'ø' ? 'o' : 'O')
+  .replace(/[åÅ]/g, m => m === 'å' ? 'a' : 'A').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+// «Dører og vinduer» → «DorerOgVinduer»
+const fileWord = s => ascii(s).split(/[^A-Za-z0-9]+/).filter(Boolean)
+  .map((w, k) => k ? w[0].toUpperCase() + w.slice(1) : w).join('').slice(0, 30);
 function fileName(i) {
   const base = safe(job.project) ? `P${safe(job.project)}` : 'Bilde';
-  return `${base}_${job.date || today()}_${String(i + 1).padStart(2, '0')}.jpg`;
+  const p = job.photos[i];
+  const words = p ? p.tags.map(fileWord).filter(Boolean).join('-').slice(0, 60) : '';
+  return `${base}_${job.date || today()}_${String(i + 1).padStart(2, '0')}${words ? '_' + words : ''}.jpg`;
 }
 const fmtTaken = t => { const [d, tm] = t.split('T'); return `${fmtDate(d)} kl. ${tm}`; };
 
@@ -58,7 +67,8 @@ function bodyText() {
   job.photos.forEach((p, i) => {
     const h = num(p.hours);
     const mat = (p.material || '').trim();
-    if (!p.tags.length && !p.text.trim() && !mat && h == null) return;
+    // Only photos with extra info get a section; the words alone are in the file name and the stamp.
+    if (!p.text.trim() && !mat && h == null) return;
     L.push(DIV);
     L.push(`BILDE ${i + 1} (${fileName(i)})`);
     if (p.tags.length) L.push(`• Arbeid: ${p.tags.join(', ')}`);
