@@ -17,6 +17,7 @@ $('btnLibrary').onclick = () => $('inLibrary').click();
 $('inCamera').onchange = e => { addFiles([...e.target.files], true); e.target.value = ''; };
 $('inLibrary').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
 $('btnSend').onclick = send;
+$('fRecentSearch').addEventListener('input', renderRecent);
 $('btnEditJob').onclick = () => { editingJob = true; renderJobView(); $('fAddress').focus(); };
 $('btnJobDone').onclick = () => { editingJob = false; document.activeElement.blur(); renderJobView(); };
 $('viewer').onclick = () => { $('viewer').classList.add('hidden'); $('viewerImg').src = ''; };

@@ -490,6 +490,44 @@ test('ord i filnavnet, og bare bilder med ekstra info i teksten', async ({ page 
   assert.match(s.text, /BILDE 3 \(P12_[^)]*_03\.jpg\)\n• Materiell: 3 lister/);
 });
 
+test('siste jobber: 3 om gangen, bla og søk', async ({ page }) => {
+  const box = page.locator('#recentList');
+  const rows = await box.locator('.cell').count();
+  assert.equal(rows, 8);
+  const r = await box.evaluate(e => {
+    const c = [...e.children].slice(0, 3).reduce((h, x) => h + x.offsetHeight, 0);
+    return { visible: e.clientHeight, three: c, scroll: e.scrollHeight };
+  });
+  assert.ok(Math.abs(r.visible - r.three) <= 1, `listen skal vise nøyaktig 3 jobber (${r.visible} mot ${r.three})`);
+  assert.ok(r.scroll > r.visible, 'resten skal nås ved å bla');
+  assert.ok(await page.isVisible('#fRecentSearch'), 'søkefeltet skal vises når det er flere enn 3');
+  assert.equal(await page.textContent('#recentHint'), '8 jobber – bla i listen for å se flere');
+  // Search by address and by project number
+  await page.fill('#fRecentSearch', 'nord');
+  assert.deepEqual(await box.locator('.two b').allTextContents(), ['Nordlysveien 25b', 'Nordre gate 3']);
+  await page.fill('#fRecentSearch', '1198');
+  assert.deepEqual(await box.locator('.two b').allTextContents(), ['Kirkeveien 22, Bærum']);
+  await page.fill('#fRecentSearch', 'finnes ikke');
+  assert.equal(await box.textContent(), 'Ingen treff');
+  // Delete from a search result removes the right job
+  await page.fill('#fRecentSearch', 'nordre');
+  await page.click('#btnEditRecent');
+  await box.locator('.minus').click();
+  const left = await page.evaluate(() => JSON.parse(localStorage.getItem('recent')).map(x => x.address));
+  assert.equal(left.length, 7);
+  assert.ok(!left.includes('Nordre gate 3'));
+  await page.click('#btnEditRecent');
+  // Pick a job from the search
+  await page.fill('#fRecentSearch', 'storgata');
+  await box.locator('button.cell').click();
+  assert.equal(await page.inputValue('#fProject'), '1234');
+}, { seed: { recent: [
+  { address: 'Nordlysveien 25b', project: '24039' }, { address: 'Storgata 1, Oslo', project: '1234' },
+  { address: 'Kirkeveien 22, Bærum', project: '1198' }, { address: 'Nordre gate 3', project: '777' },
+  { address: 'Bakkeveien 9', project: '500' }, { address: 'Sjøgata 4', project: '501' },
+  { address: 'Fjellveien 2', project: '502' }, { address: 'Elvegata 7', project: '503' },
+] } });
+
 // ---------- Runner ----------
 (async () => {
   const server = await startServer();

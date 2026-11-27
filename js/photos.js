@@ -305,14 +305,19 @@ function renderJobFields() {
 }
 
 let editRecent = false;
+const RECENT_VISIBLE = 3;   // rows shown at a time; the rest is reached by scrolling the list
 function renderRecent() {
   const show = !job.address.trim() && recent.length > 0;
   $('recentBox').classList.toggle('hidden', !show);
   if (!show) return;
+  $('btnEditRecent').textContent = editRecent ? 'Ferdig' : 'Rediger';
+  $('recentSearchBox').classList.toggle('hidden', recent.length <= RECENT_VISIBLE);
+  const q = $('fRecentSearch').value.trim().toLowerCase();
+  const list = q ? recent.filter(r => `${r.address} ${r.project}`.toLowerCase().includes(q)) : recent;
   const box = $('recentList');
   box.innerHTML = '';
-  $('btnEditRecent').textContent = editRecent ? 'Ferdig' : 'Rediger';
-  recent.forEach((r, k) => {
+  if (!list.length) box.appendChild(el('div', 'cell static sub', 'Ingen treff'));
+  list.forEach(r => {
     const two = el('span', 'two');
     two.appendChild(el('b', '', r.address || '(uten adresse)'));
     if (r.project) two.appendChild(el('span', 'sub', `Prosjekt ${r.project}`));
@@ -321,7 +326,7 @@ function renderRecent() {
       const m = el('button', 'minus', '−');
       m.setAttribute('aria-label', `Fjern ${r.address || r.project}`);
       m.onclick = () => {
-        recent.splice(k, 1); ls.set('recent', recent);
+        recent = recent.filter(x => x !== r); ls.set('recent', recent);
         if (!recent.length) editRecent = false;
         renderRecent();
       };
@@ -334,17 +339,23 @@ function renderRecent() {
     b.insertAdjacentHTML('beforeend', ICON_CHEV);
     b.onclick = () => {
       job.address = r.address; job.project = r.project; saveJob();
-      editingJob = false;
+      editingJob = false; $('fRecentSearch').value = '';
       renderJobFields(); renderNewJob();
     };
     box.appendChild(b);
   });
+  // Show exactly three rows; scroll inside the list for the rest.
+  const rows = [...box.children].slice(0, RECENT_VISIBLE);
+  box.style.maxHeight = list.length > RECENT_VISIBLE ? `${rows.reduce((h, c) => h + c.offsetHeight, 0)}px` : '';
+  const hint = $('recentHint');
+  hint.classList.toggle('hidden', list.length <= RECENT_VISIBLE);
+  hint.textContent = `${list.length} ${q ? 'treff' : 'jobber'} – bla i listen for å se flere`;
 }
 
 function addRecent() {
   const a = job.address.trim(), pr = job.project.trim();
   if (!a && !pr) return;
-  recent = [{ address: a, project: pr }].concat(recent.filter(r => !(r.address === a && r.project === pr))).slice(0, 10);
+  recent = [{ address: a, project: pr }].concat(recent.filter(r => !(r.address === a && r.project === pr))).slice(0, 50);
   ls.set('recent', recent);
 }
 

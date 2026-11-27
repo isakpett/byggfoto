@@ -26,7 +26,11 @@
   <!-- Job -->
   <div id="recentBox" class="hidden">
     <div class="section-title title-row"><span>Siste jobber</span><button id="btnEditRecent">Rediger</button></div>
-    <div class="group" id="recentList"></div>
+    <div class="group hidden" id="recentSearchBox" style="margin-bottom:8px">
+      <label class="cell static"><span class="lbl">Søk</span><input id="fRecentSearch" type="search" placeholder="Adresse eller prosjektnr." enterkeyhint="search" autocomplete="off"></label>
+    </div>
+    <div class="group recent-scroll" id="recentList"></div>
+    <div class="section-foot hidden" id="recentHint"></div>
   </div>
   <div class="section-title">Jobb</div>
   <div class="group hidden" id="jobSummary">

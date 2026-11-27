@@ -55,6 +55,7 @@ header.top h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; marg
 }
 .minus { position: relative; }
 .minus::after { content: ""; position: absolute; inset: -11px; }  /* 44px tap area */
+.recent-scroll { overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
 .title-row { display: flex; justify-content: space-between; align-items: center; }
 .title-row button { color: var(--accent); text-transform: none; font-size: 15px; letter-spacing: 0; padding: 8px 0 8px 12px; margin: -8px 0; }
 .section-title {
