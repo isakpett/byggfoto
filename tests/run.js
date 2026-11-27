@@ -453,6 +453,20 @@ for (const scheme of ['light', 'dark']) {
   }, { colorScheme: scheme });
 }
 
+test('størrelsen regner med at e-post gjør vedleggene større', async ({ page }) => {
+  await addPhotos(page, 3);
+  await page.waitForTimeout(1200);
+  const r = await page.evaluate(() => ({ photos: totalSize(), email: emailSize(), text: document.getElementById('sizeInfo').textContent }));
+  assert.ok(r.email >= r.photos * 4 / 3, 'e-posten skal telle minst 4/3 av bildene');
+  assert.match(r.text, /^E-posten blir ca\. \d+,\d MB av maks 20 MB$/);
+  // Just over the limit once packed: 16 MB of photos must warn
+  const warn = await page.evaluate(() => {
+    const real = totalSize; totalSize = () => 16 * 1024 * 1024; renderSize();
+    const cls = document.getElementById('sizeInfo').className; totalSize = real; renderSize(); return cls;
+  });
+  assert.match(warn, /over/, '16 MB bilder blir over 20 MB som e-post');
+});
+
 // ---------- Runner ----------
 (async () => {
   const server = await startServer();

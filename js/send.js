@@ -155,13 +155,16 @@ function totalSize() {
     return n + (c ? c.blob.size : (blobs.get(p.id) || { size: 0 }).size);
   }, 0);
 }
+// Email packs attachments as text (base64), which makes them about 4/3 as big.
+// The 20 MB limit applies to the email, so count that, plus the text.
+const emailSize = () => Math.ceil(totalSize() * 4 / 3) + bodyText().length * 2;
 const mb = n => (n / 1024 / 1024).toFixed(1).replace('.', ',');
 function renderSize() {
-  const info = $('sizeInfo'), n = totalSize();
+  const info = $('sizeInfo'), n = emailSize();
   info.classList.toggle('hidden', !job.photos.length);
   info.textContent = n > LIMIT
-    ? `Størrelse: ca. ${mb(n)} MB – for stort for én e-post (maks 20 MB)`
-    : `Størrelse: ca. ${mb(n)} MB av 20 MB`;
+    ? `E-posten blir ca. ${mb(n)} MB – for stor (maks 20 MB)`
+    : `E-posten blir ca. ${mb(n)} MB av maks 20 MB`;
   info.classList.toggle('warn', n > WARN && n <= LIMIT);
   info.classList.toggle('over', n > LIMIT);
 }
@@ -187,13 +190,13 @@ async function send() {
     $('btnSend').textContent = 'Gjør klar …';
     await prepare();
     renderPhotos();
-    const ok = await ask({ style: 'alert', title: 'Klar til å sende', message: `${job.photos.length} ${job.photos.length === 1 ? 'bilde' : 'bilder'}, ca. ${mb(totalSize())} MB`,
+    const ok = await ask({ style: 'alert', title: 'Klar til å sende', message: `${job.photos.length} ${job.photos.length === 1 ? 'bilde' : 'bilder'}, e-posten blir ca. ${mb(emailSize())} MB`,
       actions: [{ label: 'Send', value: 1, bold: true }, { label: 'Avbryt', value: null }] });
     if (!ok) return;
   }
-  if (totalSize() > LIMIT) {
+  if (emailSize() > LIMIT) {
     const ok = await ask({ style: 'alert', title: 'For stor e-post',
-      message: `Bildene er ca. ${mb(totalSize())} MB. Hotmail tar maks 20 MB, så e-posten kan bli stoppet. Slett noen bilder og send dem i en ny jobb.`,
+      message: `E-posten blir ca. ${mb(emailSize())} MB. Hotmail tar maks 20 MB, så den kan bli stoppet. Slett noen bilder og send dem i en ny jobb.`,
       actions: [{ label: 'Send likevel', value: 1 }, { label: 'Avbryt', value: null, bold: true }] });
     if (!ok) return;
   }
