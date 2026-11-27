@@ -528,6 +528,24 @@ test('siste jobber: 3 om gangen, bla og søk', async ({ page }) => {
   { address: 'Fjellveien 2', project: '502' }, { address: 'Elvegata 7', project: '503' },
 ] } });
 
+test('«Ny» ved siden av «Endre» starter ny jobb', async ({ page }) => {
+  await page.fill('#fAddress', 'Nordlysveien 25b'); await page.fill('#fProject', '23039');
+  await addPhotos(page, 1);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  assert.ok(await page.isVisible('#btnNewJobTop'));
+  const [ny, endre] = await Promise.all(['#btnNewJobTop', '#btnEditJob'].map(s => page.locator(s).boundingBox()));
+  assert.ok(ny.x < endre.x && Math.abs(ny.y - endre.y) < 5, '«Ny» skal stå til venstre for «Endre»');
+  assert.ok(ny.height >= 44 && ny.width >= 44, 'knappen skal være stor nok');
+  await page.click('#btnNewJobTop'); await page.waitForTimeout(350);
+  assert.match(await page.textContent('.asheet.show .msg'), /ikke sendt/);
+  await page.click('.asheet.show .destructive'); await page.waitForTimeout(400);
+  assert.equal(await page.locator('.pcard').count(), 0);
+  // «Endre» and tapping the text still open the fields
+  await page.fill('#fAddress', 'A'); await page.fill('#fProject', '1'); await page.click('#btnJobDone');
+  await page.click('#btnEditJobText');
+  assert.ok(await page.isVisible('#jobEdit'));
+});
+
 // ---------- Runner ----------
 (async () => {
   const server = await startServer();

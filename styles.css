@@ -97,7 +97,9 @@ header.top h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; marg
 .summary .two { flex: 1; min-width: 0; }
 .summary b { font-size: 19px; font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .summary small { color: var(--muted); font-size: 15px; }
-.summary .edit { color: var(--accent); }
+.summary button.two { text-align: left; padding: 0; min-width: 0; }
+.summary .sum-btn { color: var(--accent); min-height: 44px; min-width: 44px; padding: 0 6px; flex: 0 0 auto; }
+.summary .sum-btn:active { opacity: .6; }
 
 /* Photo cards */
 .pcard { scroll-margin-top: calc(60px + env(safe-area-inset-top)); background: var(--card); border-radius: var(--radius); overflow: hidden; margin-bottom: 14px; }

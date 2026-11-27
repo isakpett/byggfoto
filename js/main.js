@@ -18,12 +18,12 @@ $('inCamera').onchange = e => { addFiles([...e.target.files], true); e.target.va
 $('inLibrary').onchange = e => { addFiles([...e.target.files]); e.target.value = ''; };
 $('btnSend').onclick = send;
 $('fRecentSearch').addEventListener('input', renderRecent);
-$('btnEditJob').onclick = () => { editingJob = true; renderJobView(); $('fAddress').focus(); };
+$('btnEditJob').onclick = $('btnEditJobText').onclick = () => { editingJob = true; renderJobView(); $('fAddress').focus(); };
 $('btnJobDone').onclick = () => { editingJob = false; document.activeElement.blur(); renderJobView(); };
 $('viewer').onclick = () => { $('viewer').classList.add('hidden'); $('viewerImg').src = ''; };
 $('btnCopyEmail').onclick = () => copyText(office);
 $('btnCopySubject').onclick = () => copyText(subject());
-$('btnNewJob').onclick = async () => {
+$('btnNewJob').onclick = $('btnNewJobTop').onclick = async () => {
   const unsent = !job.sent && hasContent();
   const v = await ask({
     title: unsent ? 'Denne jobben er ikke sendt' : 'Starte en ny jobb?',
