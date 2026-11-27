@@ -28,7 +28,7 @@ function closeCam() {
   $('camVideo').srcObject = null;
   $('cam').classList.add('hidden');
   document.body.classList.remove('locked');
-  if (camAdded) afterAdd();
+  if (camAdded) afterAdd(job.photos.length - camAdded);
 }
 async function snap() {
   const v = $('camVideo');
@@ -39,7 +39,7 @@ async function snap() {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   c.getContext('2d').drawImage(v, 0, 0, w, h);
   const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', JPEG_QUALITY));
-  await addBlob(blob, nowLocal());
+  await addBlob(blob, nowLocal(), w / h);
   camAdded++;
   $('camCount').textContent = `${camAdded} ${camAdded === 1 ? 'bilde' : 'bilder'}`;
   const t = $('camThumb'); t.src = urlFor(job.photos[job.photos.length - 1].id); t.classList.remove('none');

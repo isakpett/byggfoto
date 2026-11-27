@@ -18,7 +18,8 @@ async function compress(file) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   c.getContext('2d').drawImage(img, 0, 0, w, h);
-  return new Promise(res => c.toBlob(res, 'image/jpeg', JPEG_QUALITY));
+  const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', JPEG_QUALITY));
+  return { blob, ratio: w / h };
 }
 
 // Reads when a JPEG photo was taken (EXIF DateTimeOriginal) before shrinking removes it.
@@ -56,36 +57,42 @@ async function readTakenAt(file) {
 }
 const nowLocal = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); };
 
-async function addBlob(blob, takenAt = null) {
+// ratio = width / height. Stored so each card has its final height before the image loads,
+// and the list does not move after scrolling to a photo.
+async function addBlob(blob, takenAt = null, ratio = null) {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   await putBlob(id, blob);
   blobs.set(id, blob);
-  job.photos.push({ id, tags: [], text: '', material: '', hours: '', takenAt });
+  job.photos.push({ id, tags: [], text: '', material: '', hours: '', takenAt, ratio });
   saveJob();
   return id;
 }
-function afterAdd() {
+// first = index of the first new photo. Scroll there, not to the last one,
+// so adding many photos does not throw you to the bottom of the list.
+function afterAdd(first) {
   sortComments();
   editingJob = false; renderJobView();
   renderPhotos();
-  const last = $('photos').lastElementChild;
-  if (last) last.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  const c = $('photos').children[Math.max(0, first)];
+  if (c) c.scrollIntoView({ block: 'start', behavior: 'smooth' });
 }
 
 // fromCamera: the photo was just taken, so "now" is a safe fallback when it has no EXIF time.
 async function addFiles(files, fromCamera = false) {
   if (!files.length) return;
+  const first = job.photos.length;
   $('busy').classList.remove('hidden');
   try {
     for (const f of files) {
       const takenAt = (await readTakenAt(f)) || (fromCamera ? nowLocal() : null);
-      await addBlob(await compress(f), takenAt);
+      const { blob, ratio } = await compress(f);
+      await addBlob(blob, takenAt, ratio);
     }
   } catch (e) {
     hud('Feil: ' + e.message);
   }
   $('busy').classList.add('hidden');
-  afterAdd();
+  afterAdd(first);
 }
 
 // ---------- Rendering ----------
@@ -116,7 +123,9 @@ function buildCard(p, i, n) {
   img.src = urlFor(p.id); img.alt = `Bilde ${i + 1}, trykk for fullskjerm`;
   img.onclick = () => openViewer(p.id);
   // Landscape photos fill the width with no dark bars; portrait ones keep the 16:10 box and show whole.
-  img.onload = () => { if (img.naturalWidth >= img.naturalHeight) img.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`; };
+  const applyRatio = r => { if (r >= 1) img.style.aspectRatio = String(r); };
+  if (p.ratio) applyRatio(p.ratio);
+  else img.onload = () => { p.ratio = img.naturalWidth / img.naturalHeight; ls.set('job', job); applyRatio(p.ratio); };
   const stampEl = el('div', 'stamp');
   pw.append(img, stampEl);
   card.appendChild(pw);

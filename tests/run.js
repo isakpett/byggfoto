@@ -467,6 +467,15 @@ test('størrelsen regner med at e-post gjør vedleggene større', async ({ page 
   assert.match(warn, /over/, '16 MB bilder blir over 20 MB som e-post');
 });
 
+test('etter å ha lagt til mange bilder står du på det første nye', async ({ page }) => {
+  await addPhotos(page, 2);
+  await addPhotos(page, 6);
+  await page.waitForTimeout(1500); // let the smooth scroll finish
+  const top = await card(page, 2).evaluate(e => e.getBoundingClientRect().top);
+  const bar = await page.evaluate(() => document.getElementById('topbar').getBoundingClientRect().bottom);
+  assert.ok(top >= bar && top < bar + 80, `bilde 3 skal stå rett under topplinjen (top=${Math.round(top)}, linje=${Math.round(bar)})`);
+});
+
 // ---------- Runner ----------
 (async () => {
   const server = await startServer();
