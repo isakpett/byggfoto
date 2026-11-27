@@ -187,8 +187,6 @@ async function send() {
   const missing = [];
   if (!job.address.trim()) missing.push('Adresse mangler');
   if (!job.project.trim()) missing.push('Prosjektnr. mangler');
-  const noWords = job.photos.filter(p => !p.tags.length).length;
-  if (noWords) missing.push(`${noWords} ${noWords === 1 ? 'bilde mangler' : 'bilder mangler'} arbeid`);
   if (missing.length) {
     const ok = await ask({ style: 'alert', title: 'Noe mangler', message: missing.join('\n') + '\n\nVil du sende likevel?',
       actions: [{ label: 'Send likevel', value: 1 }, { label: 'Gå tilbake', value: null, bold: true }] });

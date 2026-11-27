@@ -191,7 +191,7 @@ test('«Noe mangler»-sjekk før sending', async ({ page }) => {
   const msg = await page.textContent('.alert.show .msg');
   assert.match(msg, /Noe mangler/);
   assert.match(msg, /Adresse mangler/);
-  assert.match(msg, /1 bilde mangler arbeid/);
+  assert.doesNotMatch(msg, /mangler arbeid/, 'bilder uten ord skal ikke gi varsel');
   await page.click('.alert.show >> text=Gå tilbake');
   await page.waitForTimeout(300);
   assert.ok(!(await page.evaluate(() => window.__shared)), 'skal ikke sende etter «Gå tilbake»');
@@ -544,6 +544,24 @@ test('«Ny» ved siden av «Endre» starter ny jobb', async ({ page }) => {
   await page.fill('#fAddress', 'A'); await page.fill('#fProject', '1'); await page.click('#btnJobDone');
   await page.click('#btnEditJobText');
   assert.ok(await page.isVisible('#jobEdit'));
+});
+
+test('tom jobb: knappene ligger i samme boks som «Ingen bilder ennå»', async ({ page }) => {
+  const inBox = () => page.evaluate(() => ['empty', 'btnLibrary', 'btnBurst'].map(id => document.getElementById(id).closest('#addBox') !== null));
+  assert.deepEqual(await inBox(), [true, true, true]);
+  assert.ok(await page.isVisible('#empty'));
+  await addPhotos(page, 1);
+  assert.ok(!(await page.isVisible('#empty')), 'meldingen skal bort når det finnes bilder');
+  assert.ok(await page.isVisible('#btnLibrary'));
+});
+
+test('ingen varsel når bilder mangler ord, men adresse og prosjekt er fylt inn', async ({ page }) => {
+  await page.fill('#fAddress', 'Testveien 6'); await page.fill('#fProject', '13');
+  await addPhotos(page, 2);
+  await page.waitForTimeout(1200);
+  await page.click('#btnSend'); await page.waitForTimeout(400);
+  const titles = await page.locator('.alert.show .msg b').allTextContents();
+  assert.ok(!titles.includes('Noe mangler'), 'det skal ikke komme «Noe mangler»');
 });
 
 // ---------- Runner ----------

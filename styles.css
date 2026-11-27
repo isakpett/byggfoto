@@ -163,7 +163,8 @@ header.top h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.01em; marg
 /* History */
 .hist-text { white-space: pre-wrap; font-size: 15px; line-height: 1.45; padding: 14px 16px; }
 .back-btn { color: var(--accent); padding: 10px 16px 10px 0; font-size: 17px; }
-.empty { padding: 34px 20px; text-align: center; color: var(--muted); }
+.empty { padding: 28px 20px 18px; text-align: center; color: var(--muted); }
+.empty + .cell::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 0.5px; background: var(--sep); }
 .empty svg { color: var(--muted); opacity: .6; margin-bottom: 8px; }
 .busy { text-align: center; color: var(--muted); padding: 10px 0 16px; font-size: 15px; }
 
